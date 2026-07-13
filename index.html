@@ -255,6 +255,7 @@
       <button class="tab-btn" data-tab="stock">Current Stock</button>
       <button class="tab-btn" data-tab="low">Low Stock</button>
       <button class="tab-btn" data-tab="activity">User Activity</button>
+      <button class="tab-btn" data-tab="log">Activity Log</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
     </div>
     <div id="reportContent"></div>
@@ -383,6 +384,17 @@
   <datalist id="productNamesList"></datalist>
 </div>
 
+<div id="pinGate" style="position:fixed; inset:0; background:var(--ink); color:#fff; display:none; align-items:center; justify-content:center; z-index:100; padding:24px; text-align:center;">
+  <div style="max-width:280px; width:100%;">
+    <div style="font-size:20px; font-weight:700; margin-bottom:6px;">ShopScan</div>
+    <p style="color:var(--steel-2); font-size:14px; margin:0 0 18px; line-height:1.5;">Enter the shop access code to continue.</p>
+    <input type="password" id="pinInput" inputmode="numeric" placeholder="Access code"
+      style="width:100%; text-align:center; font-family:var(--mono); font-size:18px; padding:12px; border-radius:10px; border:1px solid #3A3F38; background:var(--ink-3); color:#fff; margin-bottom:10px;">
+    <button class="btn-primary btn-lg" id="pinSubmit" style="width:100%;">Unlock</button>
+    <div class="err-line" id="pinErr" style="margin-top:10px; text-align:center;"></div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -390,12 +402,17 @@
   /* ====================================================================
      PASTE YOUR APPS SCRIPT WEB APP URL BELOW (the one ending in /exec)
      ==================================================================== */
-  const API_URL = 'https://script.google.com/macros/s/AKfycbwbsCxw0lOK9OhWijG9WfEhdja5WdmMuZTwuiu0ySY-A7y2ogIWxUCERlx-REC_F9nbQA/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbyAVAbG8gJUDNhjXPhUFf2lWN9-hhcJZZGq8YDXv8hQq_C1osH3YCgWgWDtvK0fI-3JQw/exec';
+
+  /* Shop-wide access code shown before the app opens on a new device.
+     Change this to whatever you like - it only lives in this file, nothing to sync. */
+  const APP_PIN = '53194';
 
   const LS_STATE  = 'shopscan_state_v1';
   const LS_QUEUE  = 'shopscan_queue_v1';
   const LS_ROLE   = 'shopscan_role_v1';
   const LS_ERRORS = 'shopscan_syncerrors_v1';
+  const LS_UNLOCKED = 'shopscan_unlocked_v1';
 
   /* ============ STATE ============ */
   const state = {
@@ -622,7 +639,7 @@
       }
       const prev = product.stock;
       product.stock -= 1;
-      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Sale', barcode:product.barcode, product:product.name, qtyChange:-1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, pending:true });
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Sale', barcode:product.barcode, product:product.name, qtyChange:-1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
       saveLocalState();
       queueAction('sale', { barcode:product.barcode, user:roleName() });
       flashToast('sell', product.name, money(product.sellPrice) + ' · Sale recorded');
@@ -630,7 +647,7 @@
     } else {
       const prev = product.stock;
       product.stock += 1;
-      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Return', barcode:product.barcode, product:product.name, qtyChange:1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, pending:true });
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Return', barcode:product.barcode, product:product.name, qtyChange:1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
       saveLocalState();
       queueAction('return', { barcode:product.barcode, user:roleName() });
       flashToast('return', product.name, 'Return recorded');
@@ -701,7 +718,12 @@
   /* ============ ROLE SWITCH ============ */
   $('roleOwnerBtn').addEventListener('click', () => {
     if (state.role === 'owner') return;
-    ensureOwnerAuth(() => setRole('owner'));
+    if (!state.settings.hasPassword){ setRole('owner'); return; }
+    // Elevating to Owner always re-verifies - never skipped, even if a password was cached earlier this session
+    pendingOwnerCallback = () => setRole('owner');
+    $('opInput').value = ''; $('opErr').classList.remove('show');
+    $('modalOwnerPass').classList.add('open');
+    setTimeout(()=> $('opInput').focus(), 50);
   });
   $('roleStaffBtn').addEventListener('click', () => setRole('staff'));
   $('opCancel').addEventListener('click', () => { $('modalOwnerPass').classList.remove('open'); pendingOwnerCallback = null; });
@@ -728,6 +750,7 @@
   }
   function setRole(role){
     state.role = role;
+    if (role !== 'owner') state.ownerPasswordCache = null; // dropping to Staff always forgets it - re-elevating needs the password again
     try{ localStorage.setItem(LS_ROLE, role); }catch(e){}
     $('roleOwnerBtn').classList.toggle('active', role==='owner');
     $('roleStaffBtn').classList.toggle('active', role==='staff');
@@ -1004,6 +1027,7 @@
     if (activeReportTab === 'stock') return renderStockReport(c);
     if (activeReportTab === 'low') return renderLowStockReport(c);
     if (activeReportTab === 'activity') return renderActivityReport(c);
+    if (activeReportTab === 'log') return renderRawLog(c);
     if (activeReportTab === 'settings') return renderSettings(c);
   }
 
@@ -1014,11 +1038,13 @@
     const returns = dayLogs.filter(l => l.action==='Return');
     const revenue = sales.reduce((s,l)=> s + (l.unitPrice||0), 0);
     const returnedVal = returns.reduce((s,l)=> s + (l.unitPrice||0), 0);
+    const margin = l => (l.unitPrice||0) - (l.unitCost||0);
+    const profit = sales.reduce((s,l)=> s + margin(l), 0) - returns.reduce((s,l)=> s + margin(l), 0);
     c.innerHTML =
       '<div class="date-row"><input type="date" id="dailyDate" value="'+date+'"></div>'
       + '<div class="stat-grid">'
-      + statCard(sales.length, 'Units Sold') + statCard(money(revenue), 'Revenue')
-      + statCard(returns.length, 'Units Returned') + statCard(money(revenue-returnedVal), 'Net Revenue')
+      + statCard(sales.length, 'Units Sold') + statCard(money(revenue-returnedVal), 'Net Revenue')
+      + statCard(money(profit), 'Profit') + statCard(returns.length, 'Units Returned')
       + '</div>'
       + tableWrap(['Time','Product','Type','Amount'], dayLogs.map(l => [fmtDT(l.ts).split(' ')[1], escapeHtml(l.product), l.action + (l.pending?' ⏳':''), (l.action==='Sale'?'+':'-') + money(l.unitPrice)]));
     c.dataset.date = date;
@@ -1030,10 +1056,12 @@
       const sold = state.logs.filter(l => l.action==='Sale' && l.barcode===p.barcode);
       const ret = state.logs.filter(l => l.action==='Return' && l.barcode===p.barcode);
       const units = sold.length, retUnits = ret.length;
+      const margin = l => (l.unitPrice||0) - (l.unitCost||0);
       const rev = sold.reduce((s,l)=>s+(l.unitPrice||0),0) - ret.reduce((s,l)=>s+(l.unitPrice||0),0);
-      return [escapeHtml(p.name), units, retUnits, units-retUnits, money(rev)];
+      const profit = sold.reduce((s,l)=>s+margin(l),0) - ret.reduce((s,l)=>s+margin(l),0);
+      return [escapeHtml(p.name), units, retUnits, units-retUnits, money(rev), money(profit)];
     });
-    c.innerHTML = tableWrap(['Product','Sold','Returned','Net Units','Revenue'], rows);
+    c.innerHTML = tableWrap(['Product','Sold','Returned','Net Units','Revenue','Profit'], rows);
   }
 
   function renderStockReport(c){
@@ -1056,6 +1084,18 @@
     }).join('');
     const rows = state.logs.map(l => [fmtDT(l.ts), l.user, l.action + (l.pending?' ⏳':''), escapeHtml(l.product), (l.qtyChange>0?'+':'')+l.qtyChange, l.prevStock+'→'+l.newStock, escapeHtml(l.reason||l.note||'')]);
     c.innerHTML = '<div class="stat-grid">'+stats+'</div>' + tableWrap(['Time','User','Action','Product','Qty','Stock','Detail'], rows);
+  }
+
+  function renderRawLog(c){
+    const rows = state.logs.map(l => [
+      fmtDT(l.ts) + (l.pending?' ⏳':''), l.user, l.action, l.barcode, escapeHtml(l.product),
+      (l.qtyChange>0?'+':'')+l.qtyChange, l.prevStock, l.newStock,
+      escapeHtml(l.reason||''), escapeHtml(l.note||''),
+      l.unitPrice===null||l.unitPrice===undefined?'':money(l.unitPrice),
+      l.unitCost===null||l.unitCost===undefined?'':money(l.unitCost)
+    ]);
+    c.innerHTML = '<p style="margin:0 16px 10px; font-size:12px; color:var(--steel);">Every row your Google Sheet\'s ActivityLog tab has, in the same order. Nothing here can be edited or deleted from the app.</p>'
+      + tableWrap(['Time','User','Action','Barcode','Product','Qty','Prev','New','Reason','Note','Unit Price','Unit Cost'], rows);
   }
 
   function renderSettings(c){
@@ -1152,6 +1192,25 @@
   if ('serviceWorker' in navigator){
     window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
   }
+
+  /* ============ ACCESS PIN GATE ============ */
+  function checkPinGate(){
+    try{ if (localStorage.getItem(LS_UNLOCKED) === '1'){ $('pinGate').style.display = 'none'; return; } }catch(e){}
+    $('pinGate').style.display = 'flex';
+    setTimeout(()=> $('pinInput').focus(), 50);
+  }
+  $('pinSubmit').addEventListener('click', tryPin);
+  $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryPin(); });
+  function tryPin(){
+    if ($('pinInput').value === APP_PIN){
+      try{ localStorage.setItem(LS_UNLOCKED, '1'); }catch(e){}
+      $('pinGate').style.display = 'none';
+    } else {
+      $('pinErr').textContent = 'Incorrect code.'; $('pinErr').classList.add('show');
+      $('pinInput').value = '';
+    }
+  }
+  checkPinGate();
 
   /* ============ INIT ============ */
   (async function init(){

@@ -65,6 +65,11 @@
   .mode-btn[data-mode="sell"].active{background:var(--sell); color:var(--white);}
   .mode-btn[data-mode="return"].active{background:var(--return); color:var(--white);}
 
+  .qty-row{display:flex; align-items:center; justify-content:center; gap:10px; margin:10px 16px 0;}
+  .qty-row .qty-label{font-size:11px; font-weight:700; color:var(--steel-2); text-transform:uppercase; letter-spacing:.06em;}
+  .qty-btn{width:36px; height:36px; border-radius:10px; border:1px solid var(--ink-3); background:var(--ink-3); color:#fff; font-size:18px; font-weight:700; line-height:1;}
+  .qty-row input{width:56px; text-align:center; background:var(--ink-3); border:1px solid #3A3F38; color:#fff; border-radius:10px; padding:8px 4px; font-family:var(--mono); font-size:16px;}
+
   .viewfinder-wrap{flex:1; margin:14px 16px; position:relative; border-radius:var(--radius); overflow:hidden; background:#000; border:3px solid var(--ink-3); transition:border-color .2s, box-shadow .2s;}
   .viewfinder-wrap.mode-sell{border-color:var(--sell); box-shadow:0 0 26px var(--sell-glow);}
   .viewfinder-wrap.mode-return{border-color:var(--return); box-shadow:0 0 26px var(--return-glow);}
@@ -198,10 +203,18 @@
       <button class="mode-btn" data-mode="return">RETURN</button>
     </div>
 
+    <div class="qty-row" id="qtyRow">
+      <span class="qty-label">Qty</span>
+      <button type="button" class="qty-btn" id="qtyMinus">−</button>
+      <input type="number" id="qtyInput" value="1" min="1" max="999" inputmode="numeric">
+      <button type="button" class="qty-btn" id="qtyPlus">+</button>
+    </div>
+
     <div class="viewfinder-wrap mode-sell" id="viewfinderWrap">
       <video id="video" playsinline muted autoplay></video>
       <div class="corner tl"></div><div class="corner tr"></div>
       <div class="corner bl"></div><div class="corner br"></div>
+      <button type="button" id="restartCameraBtn" style="display:none; position:absolute; top:10px; right:10px; z-index:6; background:rgba(0,0,0,.55); color:#fff; border:1px solid rgba(255,255,255,.35); border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600;">↻ Restart Camera</button>
       <div class="camera-gate" id="cameraGate">
         <div class="gate-inner">
           <div class="gate-icon">▮▮▯▮▮▯▯▮▮</div>
@@ -229,6 +242,10 @@
   <!-- ===================== STOCK VIEW ===================== -->
   <div class="view ledger-view" id="view-stock">
     <div class="ledger-header"><h2>Stock</h2></div>
+    <div id="todayTotalStrip" style="margin:0 16px 12px; background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); padding:12px 14px;">
+      <div style="font-size:11px; color:var(--steel); font-weight:600; text-transform:uppercase; letter-spacing:.04em;">Today</div>
+      <div id="todayTotalText" style="font-family:var(--mono); font-weight:700; font-size:15px; margin-top:2px;">—</div>
+    </div>
     <div class="flash-pill" id="stockFlash"></div>
     <div class="btn-row">
       <button class="btn-primary" id="openAddStockBtn">+ Add Stock</button>
@@ -564,8 +581,34 @@
     catch(e){ return { ok:false, error:'network' }; }
   }
 
+  /* ============ SOUNDS ============ */
+  let audioCtx = null;
+  function getAudioCtx(){
+    if (!audioCtx){ try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; } }
+    return audioCtx;
+  }
+  function playTone(freq, duration, type){
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try{
+      if (ctx.state === 'suspended') ctx.resume();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = type || 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch(e){}
+  }
+  function playSaleSound(){ playTone(880,0.12,'sine'); setTimeout(()=>playTone(1320,0.12,'sine'),90); }
+  function playReturnSound(){ playTone(660,0.10,'sine'); setTimeout(()=>playTone(440,0.14,'sine'),90); }
+  function playErrorSound(){ playTone(220,0.2,'square'); }
+  function unlockAudioOnce(){ getAudioCtx(); document.removeEventListener('click', unlockAudioOnce); document.removeEventListener('touchstart', unlockAudioOnce); }
+  document.addEventListener('click', unlockAudioOnce, {once:true});
+  document.addEventListener('touchstart', unlockAudioOnce, {once:true});
+
   /* ============ CAMERA / SCANNING ============ */
-  let detector = null, cameraOk = false, scanInterval = null;
+  let detector = null, cameraOk = false, scanInterval = null, currentStream = null, cameraInitializing = false;
   const video = $('video');
 
   if ('BarcodeDetector' in window){
@@ -573,19 +616,41 @@
     catch(e){ detector = null; }
   }
 
+  function stopCameraStream(){
+    if (currentStream){ try{ currentStream.getTracks().forEach(t => t.stop()); }catch(e){} currentStream = null; }
+    video.srcObject = null;
+  }
+
   async function initCamera(){
+    if (cameraInitializing) return;
+    cameraInitializing = true;
     try{
+      stopCameraStream(); // always release any stale/frozen stream first, never stack two
       const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      currentStream = stream;
       video.srcObject = stream;
       await video.play();
       cameraOk = true;
       $('cameraGate').style.display = 'none';
+      $('restartCameraBtn').style.display = 'block';
       if (state.currentView === 'scan') startDetectionLoop();
     } catch(e){
       cameraOk = false;
+      $('cameraGate').style.display = 'flex';
       $('cameraGate').querySelector('p').textContent = 'Camera access was blocked or unavailable. You can still use everything via manual entry below.';
+    } finally {
+      cameraInitializing = false;
     }
   }
+  $('restartCameraBtn').addEventListener('click', initCamera);
+
+  // Recover from the phone freezing the camera stream while backgrounded (screen lock, app switch, etc.)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !cameraOk || state.currentView !== 'scan') return;
+    const track = currentStream && currentStream.getVideoTracks && currentStream.getVideoTracks()[0];
+    const stale = !track || track.readyState !== 'live' || video.paused || video.readyState < 2;
+    if (stale) initCamera();
+  });
 
   function startDetectionLoop(){
     if (scanInterval || !detector || !cameraOk) return;
@@ -627,33 +692,42 @@
     const product = findProduct(code);
     if (!product){
       flashToast('error', 'Not recognized', code);
+      playErrorSound();
       setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 1500);
       return;
     }
 
     if (state.scanMode === 'sell'){
-      if (product.stock <= 0){
-        flashToast('error', product.name, 'Out of stock');
+      const qty = getScanQty();
+      if (product.stock < qty){
+        flashToast('error', product.name, qty>1 ? ('Only '+product.stock+' in stock') : 'Out of stock');
+        playErrorSound();
         setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 1500);
         return;
       }
       const prev = product.stock;
-      product.stock -= 1;
-      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Sale', barcode:product.barcode, product:product.name, qtyChange:-1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
+      product.stock -= qty;
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Sale', barcode:product.barcode, product:product.name, qtyChange:-qty, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
       saveLocalState();
-      queueAction('sale', { barcode:product.barcode, user:roleName() });
-      flashToast('sell', product.name, money(product.sellPrice) + ' · Sale recorded');
+      queueAction('sale', { barcode:product.barcode, qty, user:roleName() });
+      flashToast('sell', product.name, (qty>1 ? (qty+' × '+money(product.sellPrice)+' = '+money(product.sellPrice*qty)) : money(product.sellPrice)) + ' · Sale recorded');
+      playSaleSound();
       trySyncQueue();
+      resetScanQty();
     } else {
+      const qty = getScanQty();
       const prev = product.stock;
-      product.stock += 1;
-      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Return', barcode:product.barcode, product:product.name, qtyChange:1, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
+      product.stock += qty;
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Return', barcode:product.barcode, product:product.name, qtyChange:qty, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
       saveLocalState();
-      queueAction('return', { barcode:product.barcode, user:roleName() });
-      flashToast('return', product.name, 'Return recorded');
+      queueAction('return', { barcode:product.barcode, qty, user:roleName() });
+      flashToast('return', product.name, (qty>1 ? (qty+' × Return recorded') : 'Return recorded'));
+      playReturnSound();
       trySyncQueue();
+      resetScanQty();
     }
     updateLowStockBanner();
+    if (state.currentView === 'stock') renderTodayTotal();
     setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 2000);
   }
 
@@ -692,6 +766,18 @@
     state.pendingAction = { type, label, resolve };
     showView('scan');
   }
+
+  /* ============ QTY STEPPER ============ */
+  $('qtyMinus').addEventListener('click', () => { const v = Math.max(1, (parseInt($('qtyInput').value,10)||1) - 1); $('qtyInput').value = v; });
+  $('qtyPlus').addEventListener('click', () => { const v = Math.min(999, (parseInt($('qtyInput').value,10)||1) + 1); $('qtyInput').value = v; });
+  $('qtyInput').addEventListener('change', () => {
+    let v = parseInt($('qtyInput').value,10);
+    if (isNaN(v) || v < 1) v = 1;
+    if (v > 999) v = 999;
+    $('qtyInput').value = v;
+  });
+  function getScanQty(){ return Math.max(1, parseInt($('qtyInput').value,10) || 1); }
+  function resetScanQty(){ $('qtyInput').value = 1; }
 
   /* ============ MODE TOGGLE ============ */
   $('modeToggle').addEventListener('click', e => {
@@ -778,7 +864,17 @@
   }
 
   /* ============ STOCK VIEW ============ */
+  function renderTodayTotal(){
+    const today = todayStr();
+    const lineQty = l => Math.abs(l.qtyChange || 1);
+    const sales = state.logs.filter(l => l.action==='Sale' && dateStrFromIso(l.ts) === today);
+    const returns = state.logs.filter(l => l.action==='Return' && dateStrFromIso(l.ts) === today);
+    const unitsSold = sales.reduce((s,l)=> s + lineQty(l), 0);
+    const revenue = sales.reduce((s,l)=> s + (l.unitPrice||0)*lineQty(l), 0) - returns.reduce((s,l)=> s + (l.unitPrice||0)*lineQty(l), 0);
+    $('todayTotalText').textContent = unitsSold + ' units · ' + money(revenue) + ' collected today';
+  }
   function renderStock(){
+    renderTodayTotal();
     const wrap = $('stockList');
     if (state.products.length === 0){ wrap.innerHTML = '<div class="empty-state">No products yet. Add one from the Products tab.</div>'; return; }
     wrap.innerHTML = state.products.map(p => {
@@ -1036,17 +1132,21 @@
     const dayLogs = state.logs.filter(l => (l.action==='Sale'||l.action==='Return') && dateStrFromIso(l.ts) === date);
     const sales = dayLogs.filter(l => l.action==='Sale');
     const returns = dayLogs.filter(l => l.action==='Return');
-    const revenue = sales.reduce((s,l)=> s + (l.unitPrice||0), 0);
-    const returnedVal = returns.reduce((s,l)=> s + (l.unitPrice||0), 0);
-    const margin = l => (l.unitPrice||0) - (l.unitCost||0);
-    const profit = sales.reduce((s,l)=> s + margin(l), 0) - returns.reduce((s,l)=> s + margin(l), 0);
+    const lineQty = l => Math.abs(l.qtyChange || 1);
+    const lineRevenue = l => (l.unitPrice||0) * lineQty(l);
+    const lineMargin = l => ((l.unitPrice||0) - (l.unitCost||0)) * lineQty(l);
+    const unitsSold = sales.reduce((s,l)=> s + lineQty(l), 0);
+    const unitsReturned = returns.reduce((s,l)=> s + lineQty(l), 0);
+    const revenue = sales.reduce((s,l)=> s + lineRevenue(l), 0);
+    const returnedVal = returns.reduce((s,l)=> s + lineRevenue(l), 0);
+    const profit = sales.reduce((s,l)=> s + lineMargin(l), 0) - returns.reduce((s,l)=> s + lineMargin(l), 0);
     c.innerHTML =
       '<div class="date-row"><input type="date" id="dailyDate" value="'+date+'"></div>'
       + '<div class="stat-grid">'
-      + statCard(sales.length, 'Units Sold') + statCard(money(revenue-returnedVal), 'Net Revenue')
-      + statCard(money(profit), 'Profit') + statCard(returns.length, 'Units Returned')
+      + statCard(unitsSold, 'Units Sold') + statCard(money(revenue-returnedVal), 'Net Revenue')
+      + statCard(money(profit), 'Profit') + statCard(unitsReturned, 'Units Returned')
       + '</div>'
-      + tableWrap(['Time','Product','Type','Amount'], dayLogs.map(l => [fmtDT(l.ts).split(' ')[1], escapeHtml(l.product), l.action + (l.pending?' ⏳':''), (l.action==='Sale'?'+':'-') + money(l.unitPrice)]));
+      + tableWrap(['Time','Product','Type','Qty','Amount'], dayLogs.map(l => [fmtDT(l.ts).split(' ')[1], escapeHtml(l.product), l.action + (l.pending?' ⏳':''), lineQty(l), (l.action==='Sale'?'+':'-') + money(lineRevenue(l))]));
     c.dataset.date = date;
     $('dailyDate').addEventListener('change', e => { c.dataset.date = e.target.value; renderReports(); });
   }
@@ -1055,10 +1155,13 @@
     const rows = state.products.map(p => {
       const sold = state.logs.filter(l => l.action==='Sale' && l.barcode===p.barcode);
       const ret = state.logs.filter(l => l.action==='Return' && l.barcode===p.barcode);
-      const units = sold.length, retUnits = ret.length;
-      const margin = l => (l.unitPrice||0) - (l.unitCost||0);
-      const rev = sold.reduce((s,l)=>s+(l.unitPrice||0),0) - ret.reduce((s,l)=>s+(l.unitPrice||0),0);
-      const profit = sold.reduce((s,l)=>s+margin(l),0) - ret.reduce((s,l)=>s+margin(l),0);
+      const lineQty = l => Math.abs(l.qtyChange || 1);
+      const lineRevenue = l => (l.unitPrice||0) * lineQty(l);
+      const lineMargin = l => ((l.unitPrice||0) - (l.unitCost||0)) * lineQty(l);
+      const units = sold.reduce((s,l)=>s+lineQty(l),0);
+      const retUnits = ret.reduce((s,l)=>s+lineQty(l),0);
+      const rev = sold.reduce((s,l)=>s+lineRevenue(l),0) - ret.reduce((s,l)=>s+lineRevenue(l),0);
+      const profit = sold.reduce((s,l)=>s+lineMargin(l),0) - ret.reduce((s,l)=>s+lineMargin(l),0);
       return [escapeHtml(p.name), units, retUnits, units-retUnits, money(rev), money(profit)];
     });
     c.innerHTML = tableWrap(['Product','Sold','Returned','Net Units','Revenue','Profit'], rows);

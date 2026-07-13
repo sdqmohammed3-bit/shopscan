@@ -662,13 +662,26 @@
     cameraInitializing = true;
     try{
       stopCameraStream(); // always release any stale/frozen stream first, never stack two
-      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+      });
       currentStream = stream;
       video.srcObject = stream;
       await video.play();
       cameraOk = true;
       $('cameraGate').style.display = 'none';
       $('restartCameraBtn').style.display = 'block';
+
+      // Best-effort: continuous autofocus locks onto close-up barcodes faster. Not every device
+      // supports this - if it's not available we just quietly keep the default focus behavior.
+      try{
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')){
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        }
+      } catch(e){ /* focus control not supported on this device - fine, ignore */ }
+
       if (state.currentView === 'scan') startDetectionLoop();
     } catch(e){
       cameraOk = false;
@@ -688,18 +701,37 @@
     if (stale) initCamera();
   });
 
+  let scanLoopActive = false, detecting = false;
   function startDetectionLoop(){
-    if (scanInterval || !detector || !cameraOk) return;
-    scanInterval = setInterval(async () => {
-      if (state.scanLocked || video.readyState < 2) return;
-      if (document.querySelector('.modal-backdrop.open')) return; // paused while any modal/popup is open
-      try{
-        const codes = await detector.detect(video);
-        if (codes && codes.length > 0) onBarcodeDetected(codes[0].rawValue);
-      } catch(e){ /* transient decode error, ignore */ }
-    }, 120);
+    if (scanLoopActive || !detector || !cameraOk) return;
+    scanLoopActive = true;
+    scheduleNextDetect();
   }
-  function stopDetectionLoop(){ if (scanInterval){ clearInterval(scanInterval); scanInterval = null; } }
+  function stopDetectionLoop(){
+    scanLoopActive = false;
+    if (scanInterval){ clearTimeout(scanInterval); scanInterval = null; }
+  }
+  function scheduleNextDetect(){
+    if (!scanLoopActive) return;
+    scanInterval = setTimeout(runDetectTick, 100);
+  }
+  async function runDetectTick(){
+    if (!scanLoopActive) return;
+    if (state.scanLocked || video.readyState < 2 || document.querySelector('.modal-backdrop.open') || detecting){
+      scheduleNextDetect();
+      return;
+    }
+    detecting = true;
+    try{
+      const codes = await Promise.race([
+        detector.detect(video),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('detect_timeout')), 1000))
+      ]);
+      if (codes && codes.length > 0) onBarcodeDetected(codes[0].rawValue);
+    } catch(e){ /* transient decode error or a stuck call timing out - either way, just move on */ }
+    detecting = false;
+    scheduleNextDetect();
+  }
 
   function onBarcodeDetected(code){
     if (state.scanLocked) return;

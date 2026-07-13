@@ -55,6 +55,41 @@
 
   /* ---------- Scan view ---------- */
   #view-scan{background:var(--ink); color:var(--white);}
+  #view-scan.active{
+    display:grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-areas: "banner" "mode" "qty" "viewfinder" "manualtoggle" "manualentry";
+  }
+  .scan-banner{ grid-area: banner; }
+  .mode-toggle{ grid-area: mode; }
+  .qty-row{ grid-area: qty; }
+  .viewfinder-wrap{ grid-area: viewfinder; }
+  .manual-entry-toggle{ grid-area: manualtoggle; }
+  .manual-entry{ grid-area: manualentry; }
+
+  @media (orientation: landscape) and (max-height: 550px){
+    #view-scan.active{
+      grid-template-columns: 1.3fr 1fr;
+      grid-template-rows: auto auto auto auto 1fr;
+      grid-template-areas:
+        "viewfinder banner"
+        "viewfinder mode"
+        "viewfinder qty"
+        "viewfinder manualtoggle"
+        "viewfinder manualentry";
+      column-gap: 4px;
+    }
+    #view-scan.active .viewfinder-wrap{ margin:12px 0 12px 12px; }
+    #view-scan.active .mode-toggle{ margin:12px 12px 0 8px; }
+    #view-scan.active .qty-row{ margin:10px 12px 0 8px; justify-content:flex-start; }
+    #view-scan.active .qty-btn{ width:54px; height:54px; font-size:26px; }
+    #view-scan.active .qty-row input{ width:70px; height:54px; font-size:20px; }
+    #view-scan.active .qty-row .qty-label{ font-size:12px; }
+    #view-scan.active .manual-entry-toggle{ padding:8px 12px 4px 8px; text-align:left; }
+    #view-scan.active .manual-entry{ padding:0 12px 12px 8px; }
+    #view-scan.active .scan-banner{ padding:8px 12px 4px 8px; }
+  }
   .scan-banner{display:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 16px; font-size:13px; font-weight:600;}
   .banner-warn{background:#3A2E14; color:#E8B95C;}
   .banner-action{background:#1E3A2B; color:#8FE3B0;}
@@ -661,7 +696,7 @@
         const codes = await detector.detect(video);
         if (codes && codes.length > 0) onBarcodeDetected(codes[0].rawValue);
       } catch(e){ /* transient decode error, ignore */ }
-    }, 300);
+    }, 120);
   }
   function stopDetectionLoop(){ if (scanInterval){ clearInterval(scanInterval); scanInterval = null; } }
 

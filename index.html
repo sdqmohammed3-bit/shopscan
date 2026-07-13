@@ -292,6 +292,10 @@
       </div>
       <label>Quantity to add</label>
       <input type="number" id="asQty" min="1" value="1" inputmode="numeric">
+      <label style="display:flex; align-items:center; gap:8px; margin-top:14px;">
+        <input type="checkbox" id="asSamePrice" checked style="width:auto; margin:0;">
+        <span style="font-size:13px; font-weight:600; color:var(--graphite); text-transform:none; letter-spacing:normal;">Same cost &amp; selling price as before</span>
+      </label>
       <label>Cost Price (AED)</label>
       <input type="number" id="asCost" min="0" step="0.01" inputmode="decimal">
       <label>Selling Price (AED)</label>
@@ -386,7 +390,7 @@
   /* ====================================================================
      PASTE YOUR APPS SCRIPT WEB APP URL BELOW (the one ending in /exec)
      ==================================================================== */
-  const API_URL = 'https://script.google.com/macros/s/AKfycbzV7Q05PSFUUH5TZE1G8oG0ZqXWsBMxtDzbXS01h4wNlEz7XfZVVyO8rj_4Y9u-Qe9fgw/exec';
+  const API_URL = 'https://script.google.com/macros/s/AKfycbwbsCxw0lOK9OhWijG9WfEhdja5WdmMuZTwuiu0ySY-A7y2ogIWxUCERlx-REC_F9nbQA/exec';
 
   const LS_STATE  = 'shopscan_state_v1';
   const LS_QUEUE  = 'shopscan_queue_v1';
@@ -570,6 +574,7 @@
     if (scanInterval || !detector || !cameraOk) return;
     scanInterval = setInterval(async () => {
       if (state.scanLocked || video.readyState < 2) return;
+      if (document.querySelector('.modal-backdrop.open')) return; // paused while any modal/popup is open
       try{
         const codes = await detector.detect(video);
         if (codes && codes.length > 0) onBarcodeDetected(codes[0].rawValue);
@@ -777,12 +782,21 @@
     asSelected = product || null;
     $('asSearch').value = product ? product.name : '';
     $('asQty').value = 1;
+    $('asSamePrice').checked = true;
     $('asCost').value = product ? product.costPrice : '';
     $('asSell').value = product ? product.sellPrice : '';
+    $('asCost').disabled = true;
+    $('asSell').disabled = true;
     $('asErr').classList.remove('show');
     updateAsChip();
     $('modalAddStock').classList.add('open');
   }
+  $('asSamePrice').addEventListener('change', () => {
+    const same = $('asSamePrice').checked;
+    $('asCost').disabled = same;
+    $('asSell').disabled = same;
+    if (same && asSelected){ $('asCost').value = asSelected.costPrice; $('asSell').value = asSelected.sellPrice; }
+  });
   function updateAsChip(){
     $('asChip').innerHTML = asSelected
       ? '<div class="pc-name">'+escapeHtml(asSelected.name)+'</div><div class="pc-meta">'+asSelected.barcode+' · current stock '+asSelected.stock+'</div>'
@@ -790,7 +804,11 @@
   }
   $('asSearch').addEventListener('input', () => {
     const match = state.products.find(p => p.name.toLowerCase() === $('asSearch').value.trim().toLowerCase());
-    if (match){ asSelected = match; $('asCost').value = match.costPrice; $('asSell').value = match.sellPrice; updateAsChip(); }
+    if (match){
+      asSelected = match;
+      if ($('asSamePrice').checked){ $('asCost').value = match.costPrice; $('asSell').value = match.sellPrice; }
+      updateAsChip();
+    }
   });
   $('asScanBtn').addEventListener('click', () => {
     $('modalAddStock').classList.remove('open');

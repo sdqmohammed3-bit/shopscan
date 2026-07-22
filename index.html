@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15181A">
+<title>ShopScan</title>
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ShopScan">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#15181A; --ink-2:#20241F; --ink-3:#2A2F29;
+    --paper:#F6F3EA; --paper-2:#ECE7D9; --paper-line:#DAD4C2;
+    --graphite:#2B2E28; --steel:#7C8278; --steel-2:#B9BDAF;
+    --sell:#2F8F5B; --sell-dim:#1F6B42; --sell-glow:rgba(47,143,91,.55);
+    --return:#C97A2E; --return-dim:#A35F1E; --return-glow:rgba(201,122,46,.55);
+    --danger:#C4453D; --danger-dim:#9C332C;
+    --white:#FFFFFF;
+    --radius:16px; --radius-sm:10px;
+    --sans:'IBM Plex Sans',-apple-system,Segoe UI,Roboto,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; font-family:var(--sans); color:var(--graphite); background:var(--paper);
+    -webkit-tap-highlight-color:transparent; overscroll-behavior:none;
+  }
+  button,input,select,textarea{font-family:inherit; font-size:16px;}
+  button{cursor:pointer;}
+  h1,h2,h3{margin:0; font-family:var(--sans);}
+  #app{height:100dvh; height:100vh; display:flex; flex-direction:column; max-width:520px; margin:0 auto; background:var(--paper); position:relative; overflow:hidden;}
+
+  /* ---------- Top bar + sync status ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; background:var(--ink); color:var(--white); flex:0 0 auto;
+    border-bottom:1px solid var(--ink-3);
+  }
+  .brand{display:flex; align-items:baseline; gap:8px;}
+  .brand-mark{font-weight:700; font-size:18px; letter-spacing:.2px;}
+  .role-switch{display:flex; background:var(--ink-3); border-radius:999px; padding:3px; gap:2px;}
+  .role-btn{border:none; background:transparent; color:var(--steel-2); font-size:12px; font-weight:600; padding:6px 12px; border-radius:999px; transition:background .15s,color .15s;}
+  .role-btn.active{background:var(--paper); color:var(--ink);}
+
+  .sync-strip{display:flex; align-items:center; justify-content:center; gap:6px; padding:5px 10px; font-size:10.5px; font-weight:600; font-family:var(--mono); letter-spacing:.02em; flex:0 0 auto;}
+  .sync-strip.ok{background:#1E3A2B; color:#8FE3B0;}
+  .sync-strip.syncing{background:#3A2E14; color:#E8B95C;}
+  .sync-strip.offline{background:#3A2A28; color:#E39B94;}
+  .sync-strip.warn{background:#3A2A28; color:#E39B94;}
+
+  /* ---------- Views ---------- */
+  .view{display:none; flex:1 1 auto; min-height:0; flex-direction:column;}
+  .view.active{display:flex;}
+
+  /* ---------- Scan view ---------- */
+  #view-scan{background:var(--ink); color:var(--white);}
+  #view-scan.active{
+    display:grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto 1fr auto auto;
+    grid-template-areas: "banner" "mode" "qty" "viewfinder" "manualtoggle" "manualentry";
+  }
+  .scan-banner{ grid-area: banner; }
+  .mode-toggle{ grid-area: mode; }
+  .qty-row{ grid-area: qty; }
+  .viewfinder-wrap{ grid-area: viewfinder; }
+  .manual-entry-toggle{ grid-area: manualtoggle; }
+  .manual-entry{ grid-area: manualentry; }
+
+  @media (orientation: landscape) and (max-height: 550px){
+    #app{ max-width: none; }
+    #view-scan.active{
+      grid-template-columns: 1.3fr 1fr;
+      grid-template-rows: auto auto auto auto 1fr;
+      grid-template-areas:
+        "viewfinder banner"
+        "viewfinder mode"
+        "viewfinder qty"
+        "viewfinder manualtoggle"
+        "viewfinder manualentry";
+      column-gap: 4px;
+    }
+    #view-scan.active .viewfinder-wrap{ margin:12px 0 12px 12px; }
+    #view-scan.active .mode-toggle{ margin:12px 12px 0 8px; }
+    #view-scan.active .qty-row{ margin:10px 12px 0 8px; justify-content:flex-start; }
+    #view-scan.active .qty-btn{ width:54px; height:54px; font-size:26px; }
+    #view-scan.active .qty-row input{ width:70px; height:54px; font-size:20px; }
+    #view-scan.active .qty-row .qty-label{ font-size:12px; }
+    #view-scan.active .manual-entry-toggle{ padding:8px 12px 4px 8px; text-align:left; }
+    #view-scan.active .manual-entry{ padding:0 12px 12px 8px; }
+    #view-scan.active .scan-banner{ padding:8px 12px 4px 8px; }
+  }
+  .scan-banner{display:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 16px; font-size:13px; font-weight:600;}
+  .banner-warn{background:#3A2E14; color:#E8B95C;}
+  .banner-action{background:#1E3A2B; color:#8FE3B0;}
+  .link-btn{background:none; border:none; color:inherit; text-decoration:underline; font-size:13px; font-weight:600; padding:0;}
+
+  .mode-toggle{display:flex; margin:14px 16px 0; background:var(--ink-3); border-radius:999px; padding:4px;}
+  .mode-btn{flex:1; border:none; background:transparent; color:var(--steel-2); font-weight:700; font-size:16.5px; padding:10px 0; border-radius:999px; transition:all .15s;}
+  .mode-btn[data-mode="sell"].active{background:var(--sell); color:var(--white);}
+  .mode-btn[data-mode="return"].active{background:var(--return); color:var(--white);}
+
+  .qty-row{display:flex; align-items:center; justify-content:center; gap:12px; margin:10px 16px 0;}
+  .qty-row .qty-label{font-size:13px; font-weight:700; color:var(--steel-2); text-transform:uppercase; letter-spacing:.06em;}
+  .qty-btn{width:44px; height:44px; border-radius:10px; border:1px solid var(--ink-3); background:var(--ink-3); color:#fff; font-size:22px; font-weight:700; line-height:1;}
+  .qty-row input{width:64px; text-align:center; background:var(--ink-3); border:1px solid #3A3F38; color:#fff; border-radius:10px; padding:8px 4px; font-family:var(--mono); font-size:20px; font-weight:600;}
+
+  .viewfinder-wrap{flex:1; margin:14px 16px; position:relative; border-radius:var(--radius); overflow:hidden; background:#000; border:3px solid var(--ink-3); transition:border-color .2s, box-shadow .2s;}
+  .viewfinder-wrap.mode-sell{border-color:var(--sell); box-shadow:0 0 26px var(--sell-glow);}
+  .viewfinder-wrap.mode-return{border-color:var(--return); box-shadow:0 0 26px var(--return-glow);}
+  #video{width:100%; height:100%; object-fit:cover; display:block;}
+  .corner{position:absolute; width:26px; height:26px; border-color:inherit; opacity:.9;}
+  .corner.tl{top:14px; left:14px; border-top:3px solid currentColor; border-left:3px solid currentColor;}
+  .corner.tr{top:14px; right:14px; border-top:3px solid currentColor; border-right:3px solid currentColor;}
+  .corner.bl{bottom:14px; left:14px; border-bottom:3px solid currentColor; border-left:3px solid currentColor;}
+  .corner.br{bottom:14px; right:14px; border-bottom:3px solid currentColor; border-right:3px solid currentColor;}
+  .viewfinder-wrap.mode-sell .corner{color:var(--sell);}
+  .viewfinder-wrap.mode-return .corner{color:var(--return);}
+
+  .camera-gate{position:absolute; inset:0; background:rgba(10,12,10,.94); display:flex; align-items:center; justify-content:center; text-align:center; padding:24px; z-index:5;}
+  .gate-inner h2{font-size:19px; margin-bottom:6px;}
+  .gate-inner p{color:var(--steel-2); font-size:14px; margin:0 0 18px; line-height:1.5;}
+  .gate-icon{font-size:34px; margin-bottom:10px;}
+
+  .manual-entry-toggle{text-align:center; padding:10px 16px 4px;}
+  .manual-entry{display:none; padding:0 16px 14px; gap:8px;}
+  .manual-entry.open{display:flex;}
+  .manual-entry input{flex:1; background:var(--ink-3); border:1px solid #3A3F38; color:var(--white); border-radius:var(--radius-sm); padding:12px; font-family:var(--mono);}
+
+  /* ---------- Toast ---------- */
+  .toast{position:absolute; left:16px; right:16px; bottom:90px; z-index:20; border-radius:var(--radius); padding:16px 18px; display:none; align-items:center; gap:12px; box-shadow:0 10px 30px rgba(0,0,0,.4); animation:toastIn .18s ease-out;}
+  .toast.show{display:flex;}
+  .toast .icon{font-size:22px; flex:0 0 auto;}
+  .toast .txt strong{display:block; font-size:16px;}
+  .toast .txt span{display:block; font-size:13px; opacity:.85; font-family:var(--mono);}
+  .toast.sell{background:var(--sell); color:var(--white);}
+  .toast.return{background:var(--return); color:var(--white);}
+  .toast.error{background:var(--danger); color:var(--white);}
+  @keyframes toastIn{from{opacity:0; transform:translateY(8px) scale(.98);} to{opacity:1; transform:translateY(0) scale(1);}}
+  @media (prefers-reduced-motion:reduce){ .toast{animation:none;} }
+
+  /* ---------- Ledger views (Stock / Products / Reports) ---------- */
+  .ledger-view{background:var(--paper); overflow-y:auto;}
+  .ledger-header{padding:16px 16px 8px; display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+  .ledger-header h2{font-size:18px;}
+  .btn-primary{background:var(--graphite); color:var(--white); border:none; border-radius:var(--radius-sm); padding:10px 16px; font-weight:600; font-size:14px;}
+  .btn-outline{background:transparent; border:1.5px solid var(--paper-line); color:var(--graphite); border-radius:var(--radius-sm); padding:9px 14px; font-weight:600; font-size:14px;}
+  .btn-ghost{background:transparent; border:none; color:var(--steel); font-weight:600; padding:10px 14px;}
+  .btn-danger{background:transparent; border:1.5px solid var(--danger); color:var(--danger); border-radius:var(--radius-sm); padding:9px 14px; font-weight:600; font-size:14px;}
+  .btn-row{display:flex; gap:8px; padding:0 16px 12px; flex-wrap:wrap;}
+  .btn-lg{padding:14px 22px; font-size:15px; border-radius:12px;}
+  button:disabled{opacity:.55;}
+
+  .flash-pill{margin:0 16px 10px; background:var(--sell); color:var(--white); font-size:13px; font-weight:600; padding:9px 14px; border-radius:999px; display:none;}
+  .flash-pill.show{display:block;}
+
+  .row-card{background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); margin:0 16px 10px; padding:12px 14px;}
+  .row-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .row-name{font-weight:600; font-size:15px;}
+  .row-barcode{font-family:var(--mono); font-size:11px; color:var(--steel); margin-top:2px;}
+  .row-stock{font-family:var(--mono); font-weight:700; font-size:15px; text-align:right;}
+  .row-stock.low{color:var(--danger);}
+  .row-sub{display:flex; justify-content:space-between; margin-top:8px; font-family:var(--mono); font-size:12px; color:var(--steel);}
+  .row-actions{margin-top:10px; display:flex; gap:8px;}
+  .tag{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 7px; border-radius:5px; background:var(--paper-2); color:var(--steel);}
+  .tag.low{background:#FBE4E1; color:var(--danger-dim);}
+
+  .empty-state{margin:30px 16px; text-align:center; color:var(--steel); font-size:14px; line-height:1.6;}
+
+  /* ---------- Tabs (Reports) ---------- */
+  .tabs{display:flex; gap:6px; padding:0 16px 10px; overflow-x:auto;}
+  .tab-btn{flex:0 0 auto; border:1px solid var(--paper-line); background:var(--white); color:var(--steel); font-size:12.5px; font-weight:600; padding:8px 12px; border-radius:999px; white-space:nowrap;}
+  .tab-btn.active{background:var(--graphite); color:var(--white); border-color:var(--graphite);}
+
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th{font-family:var(--mono); text-transform:uppercase; letter-spacing:.04em; font-size:10px; color:var(--steel); text-align:left; padding:6px 8px; border-bottom:1.5px solid var(--paper-line);}
+  td{padding:8px; border-bottom:1px solid var(--paper-line); font-family:var(--mono);}
+  .table-wrap{margin:0 16px 16px; background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); overflow-x:auto;}
+  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 16px 14px;}
+  .stat-card{background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); padding:12px 14px;}
+  .stat-card .num{font-family:var(--mono); font-weight:700; font-size:20px;}
+  .stat-card .lbl{font-size:11px; color:var(--steel); margin-top:2px;}
+  .date-row{padding:0 16px 10px;}
+  .date-row input{border:1px solid var(--paper-line); border-radius:var(--radius-sm); padding:9px 10px; font-family:var(--mono);}
+
+  /* ---------- Bottom nav ---------- */
+  .navbar{display:flex; flex:0 0 auto; background:var(--ink); border-top:1px solid var(--ink-3); padding-bottom:env(safe-area-inset-bottom);}
+  .navbtn{flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; background:none; border:none; padding:10px 0 8px; color:var(--steel-2);}
+  .navbtn.active{color:#fff;}
+  .navbtn svg{width:25px; height:25px;}
+  .navbtn span{font-size:12.5px; font-weight:600;}
+  .navbtn[hidden]{display:none;}
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop{position:absolute; inset:0; background:rgba(21,24,26,.5); display:none; align-items:flex-end; z-index:30;}
+  .modal-backdrop.open{display:flex;}
+  .modal{background:var(--paper); width:100%; max-height:88%; overflow-y:auto; border-radius:20px 20px 0 0; padding:18px 18px calc(18px + env(safe-area-inset-bottom));}
+  .modal h3{font-size:17px; margin-bottom:12px;}
+  .modal label{display:block; font-size:12px; font-weight:600; color:var(--steel); margin:12px 0 5px;}
+  .modal input, .modal select, .modal textarea{width:100%; border:1px solid var(--paper-line); background:var(--white); border-radius:var(--radius-sm); padding:11px 12px; font-family:var(--mono);}
+  .modal textarea{font-family:var(--sans); resize:vertical; min-height:60px;}
+  .row-inline{display:flex; gap:8px;}
+  .row-inline input{flex:1;}
+  .product-chip{background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); padding:10px 12px; font-size:13px; margin-top:4px; min-height:20px;}
+  .product-chip .pc-name{font-weight:600;}
+  .product-chip .pc-meta{font-family:var(--mono); font-size:11px; color:var(--steel); margin-top:2px;}
+  .modal-actions{display:flex; gap:10px; margin-top:20px;}
+  .modal-actions button{flex:1;}
+  .err-line{color:var(--danger); font-size:12.5px; margin-top:8px; display:none;}
+  .err-line.show{display:block;}
+  .dir-toggle{display:flex; gap:8px; margin-top:5px;}
+  .dir-btn{flex:1; border:1.5px solid var(--paper-line); background:var(--white); border-radius:var(--radius-sm); padding:10px; font-weight:700; font-size:13px; color:var(--steel);}
+  .dir-btn.active[data-dir="add"]{background:var(--sell); border-color:var(--sell); color:var(--white);}
+  .dir-btn.active[data-dir="remove"]{background:var(--danger); border-color:var(--danger); color:var(--white);}
+
+  a.reset-link{display:block; text-align:center; font-size:12px; color:var(--steel); margin:6px 0 20px;}
+  :focus-visible{outline:2px solid var(--sell); outline-offset:2px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div class="topbar">
+    <div class="brand"><span class="brand-mark">ShopScan</span></div>
+    <div class="role-switch">
+      <button class="role-btn" id="roleOwnerBtn" data-role="owner">Owner</button>
+      <button class="role-btn active" id="roleStaffBtn" data-role="staff">Staff</button>
+    </div>
+  </div>
+  <div class="sync-strip ok" id="syncBadge">● Synced</div>
+
+  <!-- ===================== SCAN VIEW ===================== -->
+  <div class="view active" id="view-scan">
+    <div class="scan-banner" id="scanBanner"></div>
+
+    <div class="mode-toggle" id="modeToggle">
+      <button class="mode-btn active" data-mode="sell">SELL</button>
+      <button class="mode-btn" data-mode="return">RETURN</button>
+    </div>
+
+    <div class="qty-row" id="qtyRow">
+      <span class="qty-label">Qty</span>
+      <button type="button" class="qty-btn" id="qtyMinus">−</button>
+      <input type="number" id="qtyInput" value="1" min="1" max="999" inputmode="numeric">
+      <button type="button" class="qty-btn" id="qtyPlus">+</button>
+    </div>
+
+    <div class="viewfinder-wrap mode-sell" id="viewfinderWrap">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="corner tl"></div><div class="corner tr"></div>
+      <div class="corner bl"></div><div class="corner br"></div>
+      <button type="button" id="restartCameraBtn" style="display:none; position:absolute; top:10px; right:10px; z-index:6; background:rgba(0,0,0,.55); color:#fff; border:1px solid rgba(255,255,255,.35); border-radius:8px; padding:6px 10px; font-size:11px; font-weight:600;">↻ Restart Camera</button>
+      <div class="camera-gate" id="cameraGate">
+        <div class="gate-inner">
+          <div class="gate-icon">▮▮▯▮▮▯▯▮▮</div>
+          <h2>Enable camera</h2>
+          <p>ShopScan needs your camera to scan barcodes. On your phone, use Chrome for the fastest live scanning.</p>
+          <button class="btn-primary btn-lg" id="enableCameraBtn">Enable Camera</button><br><br>
+          <button class="link-btn" id="skipCameraBtn" style="color:var(--steel-2)">Use manual entry instead</button>
+        </div>
+      </div>
+      <div class="toast" id="toast">
+        <div class="icon" id="toastIcon">✓</div>
+        <div class="txt"><strong id="toastTitle"></strong><span id="toastSub"></span></div>
+      </div>
+    </div>
+
+    <div class="manual-entry-toggle">
+      <button class="link-btn" id="manualToggleBtn" style="color:#B9BDAF">⌨ Enter barcode manually</button>
+    </div>
+    <div class="manual-entry" id="manualEntry">
+      <input type="text" id="manualInput" placeholder="Type or paste barcode…" inputmode="numeric">
+      <button class="btn-primary" id="manualGoBtn">Go</button>
+    </div>
+  </div>
+
+  <!-- ===================== STOCK VIEW ===================== -->
+  <div class="view ledger-view" id="view-stock">
+    <div class="ledger-header"><h2>Stock</h2></div>
+    <div id="todayTotalStrip" style="margin:0 16px 12px; background:var(--white); border:1px solid var(--paper-line); border-radius:var(--radius-sm); padding:12px 14px;">
+      <div style="font-size:11px; color:var(--steel); font-weight:600; text-transform:uppercase; letter-spacing:.04em;">Today</div>
+      <div id="todayTotalText" style="font-family:var(--mono); font-weight:700; font-size:15px; margin-top:2px;">—</div>
+    </div>
+    <div class="flash-pill" id="stockFlash"></div>
+    <div class="btn-row">
+      <button class="btn-primary" id="openAddStockBtn">+ Add Stock</button>
+      <button class="btn-outline" id="openAdjustBtn">Adjust Stock</button>
+    </div>
+    <div id="stockList"></div>
+  </div>
+
+  <!-- ===================== PRODUCTS VIEW ===================== -->
+  <div class="view ledger-view" id="view-products">
+    <div class="ledger-header"><h2>Products</h2>
+      <button class="btn-primary" id="openAddProductBtn">+ Add Product</button>
+    </div>
+    <div id="productsHint" style="display:none; margin:0 16px 10px; background:var(--paper-2); color:var(--steel); font-size:13px; font-weight:600; padding:9px 14px; border-radius:999px;"></div>
+    <div id="productsList"></div>
+  </div>
+
+  <!-- ===================== REPORTS VIEW (owner) ===================== -->
+  <div class="view ledger-view" id="view-reports">
+    <div class="ledger-header"><h2>Reports</h2></div>
+    <div class="tabs" id="reportTabs">
+      <button class="tab-btn active" data-tab="daily">Daily Sales</button>
+      <button class="tab-btn" data-tab="product">Product-wise</button>
+      <button class="tab-btn" data-tab="stock">Current Stock</button>
+      <button class="tab-btn" data-tab="low">Low Stock</button>
+      <button class="tab-btn" data-tab="activity">User Activity</button>
+      <button class="tab-btn" data-tab="log">Activity Log</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+    <div id="reportContent"></div>
+  </div>
+
+  <!-- ===================== BOTTOM NAV ===================== -->
+  <div class="navbar">
+    <button class="navbtn active" data-view="scan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="2" height="14"/><rect x="7" y="5" width="1" height="14"/><rect x="10" y="5" width="3" height="14"/><rect x="15" y="5" width="1" height="14"/><rect x="18" y="5" width="3" height="14"/></svg>
+      <span>Scan</span>
+    </button>
+    <button class="navbtn" data-view="stock">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8l9-5 9 5-9 5-9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+      <span>Stock</span>
+    </button>
+    <button class="navbtn" data-view="products">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12l-8 8-9-9V3h8l9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>
+      <span>Products</span>
+    </button>
+    <button class="navbtn" data-view="reports" data-owner-only>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="12" width="3.5" height="8"/><rect x="10.2" y="7" width="3.5" height="13"/><rect x="16.5" y="3" width="3.5" height="17"/></svg>
+      <span>Reports</span>
+    </button>
+  </div>
+
+  <!-- ===================== MODALS ===================== -->
+  <div class="modal-backdrop" id="modalAddStock">
+    <div class="modal">
+      <h3>Add Stock</h3>
+
+      <div id="asListStage">
+        <input type="text" id="asFilter" placeholder="Filter products… (optional)" style="margin-bottom:10px;">
+        <div id="asProductList" style="max-height:300px; overflow-y:auto; border:1px solid var(--paper-line); border-radius:10px;"></div>
+        <button type="button" class="btn-outline" id="asScanBtn" style="width:100%; margin-top:12px;">Scan barcode instead</button>
+      </div>
+
+      <div id="asFormStage" style="display:none;">
+        <div class="product-chip" id="asChip">No product selected</div>
+        <button type="button" class="link-btn" id="asChangeProductBtn" style="margin-top:6px; color:var(--steel);">← Change product</button>
+        <label>Quantity to add</label>
+        <input type="number" id="asQty" min="1" value="1" inputmode="numeric">
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px;">
+          <input type="checkbox" id="asSamePrice" checked style="width:auto; margin:0;">
+          <span style="font-size:13px; font-weight:600; color:var(--graphite); text-transform:none; letter-spacing:normal;">Same cost &amp; selling price as before</span>
+        </label>
+        <label>Cost Price (AED)</label>
+        <input type="number" id="asCost" min="0" step="0.01" inputmode="decimal">
+        <label>Selling Price (AED)</label>
+        <input type="number" id="asSell" min="0" step="0.01" inputmode="decimal">
+        <label>Note (optional)</label>
+        <textarea id="asNote" placeholder="e.g. restocked from supplier…"></textarea>
+        <div class="err-line" id="asErr"></div>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="asCancel">Cancel</button>
+          <button class="btn-primary" id="asSubmit">Add Stock</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modalAdjust">
+    <div class="modal">
+      <h3>Adjust Stock</h3>
+      <label>Product</label>
+      <div class="product-chip" id="adjChip">No product selected</div>
+      <div class="row-inline" style="margin-top:8px;">
+        <input type="text" id="adjSearch" list="productNamesList" placeholder="Type product name…">
+        <button type="button" class="btn-outline" id="adjScanBtn">Scan</button>
+      </div>
+      <label>Direction</label>
+      <div class="dir-toggle" id="adjDirToggle">
+        <button type="button" class="dir-btn active" data-dir="add">+ Add</button>
+        <button type="button" class="dir-btn" data-dir="remove">− Remove</button>
+      </div>
+      <label>Quantity</label>
+      <input type="number" id="adjQty" min="1" value="1" inputmode="numeric">
+      <label>Reason</label>
+      <select id="adjReason">
+        <option>Damaged</option><option>Expired</option><option>Missing</option><option>Other</option>
+      </select>
+      <label>Note (optional)</label>
+      <textarea id="adjNote" placeholder="Any extra detail…"></textarea>
+      <div class="err-line" id="adjErr"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="adjCancel">Cancel</button>
+        <button class="btn-primary" id="adjSubmit">Save Adjustment</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modalProduct">
+    <div class="modal">
+      <h3 id="pfTitle">Add Product</h3>
+      <label>Barcode</label>
+      <div class="row-inline">
+        <input type="text" id="pfBarcode" placeholder="Product barcode" inputmode="numeric">
+        <button type="button" class="btn-outline" id="pfScanBtn">Scan</button>
+      </div>
+      <label>Product Name</label>
+      <input type="text" id="pfName" placeholder="e.g. Al Ain Water 1.5L">
+      <label>Cost Price (AED)</label>
+      <input type="number" id="pfCost" min="0" step="0.01" inputmode="decimal">
+      <label>Selling Price (AED)</label>
+      <input type="number" id="pfSell" min="0" step="0.01" inputmode="decimal">
+      <div id="pfStockWrap">
+        <label>Initial Stock</label>
+        <input type="number" id="pfStock" min="0" value="0" inputmode="numeric">
+      </div>
+      <label>Low Stock Threshold</label>
+      <input type="number" id="pfThreshold" min="0" value="5" inputmode="numeric">
+      <div class="err-line" id="pfErr"></div>
+      <div class="modal-actions">
+        <button class="btn-danger" id="pfDelete" style="display:none;">Delete</button>
+        <button class="btn-ghost" id="pfCancel">Cancel</button>
+        <button class="btn-primary" id="pfSubmit">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="modalOwnerPass">
+    <div class="modal">
+      <h3>Owner Access</h3>
+      <label>Enter Owner Password</label>
+      <input type="password" id="opInput" placeholder="Password" inputmode="numeric">
+      <div class="err-line" id="opErr"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="opCancel">Cancel</button>
+        <button class="btn-primary" id="opSubmit">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <datalist id="productNamesList"></datalist>
+</div>
+
+<div id="pinGate" style="position:fixed; inset:0; background:var(--ink); color:#fff; display:none; align-items:center; justify-content:center; z-index:100; padding:24px; text-align:center;">
+  <div style="max-width:280px; width:100%;">
+    <div style="font-size:20px; font-weight:700; margin-bottom:6px;">ShopScan</div>
+    <p style="color:var(--steel-2); font-size:14px; margin:0 0 18px; line-height:1.5;">Enter the shop access code to continue.</p>
+    <input type="password" id="pinInput" inputmode="numeric" placeholder="Access code"
+      style="width:100%; text-align:center; font-family:var(--mono); font-size:18px; padding:12px; border-radius:10px; border:1px solid #3A3F38; background:var(--ink-3); color:#fff; margin-bottom:10px;">
+    <button class="btn-primary btn-lg" id="pinSubmit" style="width:100%;">Unlock</button>
+    <div class="err-line" id="pinErr" style="margin-top:10px; text-align:center;"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ====================================================================
+     PASTE YOUR APPS SCRIPT WEB APP URL BELOW (the one ending in /exec)
+     ==================================================================== */
+  const API_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+
+  /* Shop-wide access code shown before the app opens on a new device.
+     Change this to whatever you like - it only lives in this file, nothing to sync. */
+  const APP_PIN = 'CHANGE_ME_1234';
+
+  const LS_STATE  = 'shopscan_state_v1';
+  const LS_QUEUE  = 'shopscan_queue_v1';
+  const LS_ROLE   = 'shopscan_role_v1';
+  const LS_ERRORS = 'shopscan_syncerrors_v1';
+  const LS_UNLOCKED = 'shopscan_unlocked_v1';
+
+  /* ============ STATE ============ */
+  const state = {
+    products: [], logs: [],
+    settings: { defaultLowStockThreshold: 5, hasPassword: false },
+    role: localStorage.getItem(LS_ROLE) || 'staff',
+    ownerPasswordCache: null,
+    scanMode: 'sell',
+    currentView: 'scan', previousView: 'scan',
+    pendingAction: null, scanLocked: false
+  };
+  let pendingOwnerCallback = null;
+
+  const $ = id => document.getElementById(id);
+  const money = n => 'AED ' + Number(n||0).toFixed(2);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  const todayStr = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const dateStrFromIso = iso => { const d=new Date(iso); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+  const fmtDT = iso => { const d=new Date(iso); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) + ' ' + d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}); };
+  const findProduct = code => state.products.find(p => p.barcode === code);
+  const roleName = () => state.role === 'owner' ? 'Owner' : 'Staff';
+  const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+  /* ============ LOCAL STORAGE (cache + outbox) ============ */
+  function saveLocalState(){
+    try{ localStorage.setItem(LS_STATE, JSON.stringify({products:state.products, logs:state.logs, settings:state.settings})); }catch(e){}
+  }
+  function loadLocalState(){
+    try{
+      const raw = localStorage.getItem(LS_STATE);
+      if (raw){
+        const p = JSON.parse(raw);
+        state.products = p.products || [];
+        state.logs = p.logs || [];
+        state.settings = Object.assign({defaultLowStockThreshold:5, hasPassword:false}, p.settings || {});
+        return true;
+      }
+    } catch(e){}
+    return false;
+  }
+  function getQueue(){ try{ return JSON.parse(localStorage.getItem(LS_QUEUE) || '[]'); }catch(e){ return []; } }
+  function saveQueue(q){ try{ localStorage.setItem(LS_QUEUE, JSON.stringify(q)); }catch(e){} }
+  function queueAction(action, payload){
+    const q = getQueue();
+    q.push({ id: uid(), action, payload, ts: new Date().toISOString() });
+    saveQueue(q);
+    updateSyncBadge();
+  }
+  function getSyncErrors(){ try{ return JSON.parse(localStorage.getItem(LS_ERRORS) || '[]'); }catch(e){ return []; } }
+  function addSyncError(entry){
+    const arr = getSyncErrors(); arr.unshift(entry);
+    try{ localStorage.setItem(LS_ERRORS, JSON.stringify(arr.slice(0,50))); }catch(e){}
+  }
+  function clearSyncErrors(){ try{ localStorage.removeItem(LS_ERRORS); }catch(e){} }
+
+  /* ============ NETWORK ============ */
+  async function apiGet(){
+    const res = await fetch(API_URL, { method:'GET' });
+    if (!res.ok) throw new Error('bad_status');
+    return await res.json();
+  }
+  async function apiPost(action, payload){
+    const res = await fetch(API_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify(Object.assign({action}, payload))
+    });
+    if (!res.ok) throw new Error('bad_status');
+    return await res.json();
+  }
+
+  /* ============ SYNC ENGINE ============ */
+  let syncing = false;
+  async function refreshFromServer(){
+    try{
+      const json = await apiGet();
+      if (json && json.ok){
+        state.products = json.data.products;
+        state.logs = json.data.logs;
+        state.settings = json.data.settings;
+        saveLocalState();
+        return true;
+      }
+    } catch(e){ /* offline or unreachable */ }
+    return false;
+  }
+
+  async function trySyncQueue(){
+    if (syncing) return;
+    syncing = true;
+    try{
+      if (!navigator.onLine){ updateSyncBadge(); return; }
+      let queue = getQueue();
+      while (queue.length > 0){
+        const item = queue[0];
+        let res;
+        try{ res = await apiPost(item.action, item.payload); }
+        catch(networkErr){ updateSyncBadge(); return; } // stop, retry later
+        if (!res || res.ok === false){
+          addSyncError({ ts:new Date().toISOString(), action:item.action, product:item.payload.product||item.payload.name||item.payload.barcode, error:(res&&res.error)||'unknown' });
+        }
+        queue.shift();
+        saveQueue(queue);
+      }
+      await refreshFromServer();
+      updateSyncBadge();
+      if (state.currentView === 'stock') renderStock();
+      if (state.currentView === 'products') renderProducts();
+      if (state.currentView === 'reports') renderReports();
+      updateLowStockBanner();
+    } finally { syncing = false; }
+  }
+
+  function updateSyncBadge(){
+    const badge = $('syncBadge');
+    const q = getQueue().length;
+    const errs = getSyncErrors().length;
+    if (!navigator.onLine){
+      badge.textContent = '● Offline' + (q ? (' · ' + q + ' pending') : '');
+      badge.className = 'sync-strip offline';
+    } else if (q > 0){
+      badge.textContent = '○ Syncing ' + q + '…';
+      badge.className = 'sync-strip syncing';
+    } else if (errs > 0){
+      badge.textContent = '⚠ ' + errs + ' sync issue' + (errs>1?'s':'') + ' — see Settings';
+      badge.className = 'sync-strip warn';
+    } else {
+      badge.textContent = '● Synced';
+      badge.className = 'sync-strip ok';
+    }
+  }
+
+  window.addEventListener('online', trySyncQueue);
+  window.addEventListener('offline', updateSyncBadge);
+  setInterval(trySyncQueue, 20000);
+
+  /* ============ OWNER-GATED SERVER ACTIONS ============ */
+  function ensureOwnerAuth(callback){
+    if (!state.settings.hasPassword || state.ownerPasswordCache){ callback(); return; }
+    pendingOwnerCallback = callback;
+    $('opInput').value = ''; $('opErr').classList.remove('show');
+    $('modalOwnerPass').classList.add('open');
+    setTimeout(()=> $('opInput').focus(), 50);
+  }
+  async function doOwnerServerAction(action, payload){
+    if (!navigator.onLine) return { ok:false, error:'offline' };
+    const withPass = Object.assign({ ownerPassword: state.ownerPasswordCache || '' }, payload);
+    try{ return await apiPost(action, withPass); }
+    catch(e){ return { ok:false, error:'network' }; }
+  }
+
+  /* ============ SOUNDS ============ */
+  let audioCtx = null;
+  function getAudioCtx(){
+    if (!audioCtx){ try{ audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ audioCtx = null; } }
+    return audioCtx;
+  }
+  function playTone(freq, duration, type){
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    try{
+      if (ctx.state === 'suspended') ctx.resume();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = type || 'sine'; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch(e){}
+  }
+  function playSaleSound(){ playTone(880,0.12,'sine'); setTimeout(()=>playTone(1320,0.12,'sine'),90); }
+  function playReturnSound(){ playTone(660,0.10,'sine'); setTimeout(()=>playTone(440,0.14,'sine'),90); }
+  function playErrorSound(){ playTone(220,0.2,'square'); }
+  function unlockAudioOnce(){ getAudioCtx(); document.removeEventListener('click', unlockAudioOnce); document.removeEventListener('touchstart', unlockAudioOnce); }
+  document.addEventListener('click', unlockAudioOnce, {once:true});
+  document.addEventListener('touchstart', unlockAudioOnce, {once:true});
+
+  /* ============ CAMERA / SCANNING ============ */
+  let detector = null, cameraOk = false, scanInterval = null, currentStream = null, cameraInitializing = false;
+  const video = $('video');
+
+  if ('BarcodeDetector' in window){
+    try { detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','qr_code']}); }
+    catch(e){ detector = null; }
+  }
+
+  function stopCameraStream(){
+    if (currentStream){ try{ currentStream.getTracks().forEach(t => t.stop()); }catch(e){} currentStream = null; }
+    video.srcObject = null;
+  }
+
+  async function initCamera(){
+    if (cameraInitializing) return;
+    cameraInitializing = true;
+    try{
+      stopCameraStream(); // always release any stale/frozen stream first, never stack two
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+      });
+      currentStream = stream;
+      video.srcObject = stream;
+      await video.play();
+      cameraOk = true;
+      $('cameraGate').style.display = 'none';
+      $('restartCameraBtn').style.display = 'block';
+
+      // Best-effort: continuous autofocus locks onto close-up barcodes faster. Not every device
+      // supports this - if it's not available we just quietly keep the default focus behavior.
+      try{
+        const track = stream.getVideoTracks()[0];
+        const caps = track.getCapabilities ? track.getCapabilities() : {};
+        if (caps.focusMode && caps.focusMode.includes('continuous')){
+          await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+        }
+      } catch(e){ /* focus control not supported on this device - fine, ignore */ }
+
+      if (state.currentView === 'scan') startDetectionLoop();
+    } catch(e){
+      cameraOk = false;
+      $('cameraGate').style.display = 'flex';
+      $('cameraGate').querySelector('p').textContent = 'Camera access was blocked or unavailable. You can still use everything via manual entry below.';
+    } finally {
+      cameraInitializing = false;
+    }
+  }
+  $('restartCameraBtn').addEventListener('click', initCamera);
+
+  // Recover from the phone freezing the camera stream while backgrounded (screen lock, app switch, etc.)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !cameraOk || state.currentView !== 'scan') return;
+    const track = currentStream && currentStream.getVideoTracks && currentStream.getVideoTracks()[0];
+    const stale = !track || track.readyState !== 'live' || video.paused || video.readyState < 2;
+    if (stale) initCamera();
+  });
+
+  let scanLoopActive = false, detecting = false;
+  function startDetectionLoop(){
+    if (scanLoopActive || !detector || !cameraOk) return;
+    scanLoopActive = true;
+    scheduleNextDetect();
+  }
+  function stopDetectionLoop(){
+    scanLoopActive = false;
+    if (scanInterval){ clearTimeout(scanInterval); scanInterval = null; }
+  }
+  function scheduleNextDetect(){
+    if (!scanLoopActive) return;
+    scanInterval = setTimeout(runDetectTick, 100);
+  }
+  async function runDetectTick(){
+    if (!scanLoopActive) return;
+    if (state.scanLocked || video.readyState < 2 || document.querySelector('.modal-backdrop.open') || detecting){
+      scheduleNextDetect();
+      return;
+    }
+    detecting = true;
+    try{
+      const codes = await Promise.race([
+        detector.detect(video),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('detect_timeout')), 1000))
+      ]);
+      if (codes && codes.length > 0) onBarcodeDetected(codes[0].rawValue);
+    } catch(e){ /* transient decode error or a stuck call timing out - either way, just move on */ }
+    detecting = false;
+    scheduleNextDetect();
+  }
+
+  function onBarcodeDetected(code){
+    if (state.scanLocked) return;
+    state.scanLocked = true;
+
+    if (state.pendingAction){
+      const pa = state.pendingAction;
+      if (pa.type === 'rawCode'){
+        state.pendingAction = null;
+        pa.resolve(code, findProduct(code));
+        setTimeout(()=>{ state.scanLocked = false; }, 400);
+        return;
+      }
+      const product = findProduct(code);
+      if (!product){
+        flashToast('error', 'Not found', 'No product with this barcode');
+        setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 1200);
+        return;
+      }
+      state.pendingAction = null;
+      pa.resolve(product);
+      setTimeout(()=>{ state.scanLocked = false; }, 400);
+      return;
+    }
+
+    const product = findProduct(code);
+    if (!product){
+      flashToast('error', 'Not recognized', code);
+      playErrorSound();
+      setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 1500);
+      return;
+    }
+
+    if (state.scanMode === 'sell'){
+      const qty = getScanQty();
+      if (product.stock < qty){
+        flashToast('error', product.name, qty>1 ? ('Only '+product.stock+' in stock') : 'Out of stock');
+        playErrorSound();
+        setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 1500);
+        return;
+      }
+      const prev = product.stock;
+      product.stock -= qty;
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Sale', barcode:product.barcode, product:product.name, qtyChange:-qty, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
+      saveLocalState();
+      queueAction('sale', { barcode:product.barcode, qty, user:roleName() });
+      flashToast('sell', product.name, (qty>1 ? (qty+' × '+money(product.sellPrice)+' = '+money(product.sellPrice*qty)) : money(product.sellPrice)) + ' · Sale recorded');
+      playSaleSound();
+      trySyncQueue();
+      resetScanQty();
+    } else {
+      const qty = getScanQty();
+      const prev = product.stock;
+      product.stock += qty;
+      state.logs.unshift({ ts:new Date().toISOString(), user:roleName(), action:'Return', barcode:product.barcode, product:product.name, qtyChange:qty, prevStock:prev, newStock:product.stock, unitPrice:product.sellPrice, unitCost:product.costPrice, pending:true });
+      saveLocalState();
+      queueAction('return', { barcode:product.barcode, qty, user:roleName() });
+      flashToast('return', product.name, (qty>1 ? (qty+' × Return recorded') : 'Return recorded'));
+      playReturnSound();
+      trySyncQueue();
+      resetScanQty();
+    }
+    updateLowStockBanner();
+    if (state.currentView === 'stock') renderTodayTotal();
+    setTimeout(()=>{ state.scanLocked = false; hideToast(); }, 2000);
+  }
+
+  function flashToast(kind, title, sub){
+    const t = $('toast');
+    t.className = 'toast show ' + kind;
+    $('toastIcon').textContent = kind === 'sell' ? '✓' : kind === 'return' ? '↩' : '✕';
+    $('toastTitle').textContent = title;
+    $('toastSub').textContent = sub || '';
+  }
+  function hideToast(){ $('toast').className = 'toast'; }
+
+  /* ============ SCAN BANNER ============ */
+  function renderScanBanner(){
+    const el = $('scanBanner');
+    if (state.pendingAction){
+      el.innerHTML = '<span>' + (state.pendingAction.label || 'Scan the product to continue') + '</span><button id="cancelPendingBtn" class="link-btn">Cancel</button>';
+      el.className = 'scan-banner banner-action';
+      el.style.display = 'flex';
+      $('cancelPendingBtn').onclick = () => { state.pendingAction = null; showView(state.previousView || 'scan'); };
+      return;
+    }
+    const lowCount = state.products.filter(p => p.stock <= p.lowStockThreshold).length;
+    if (lowCount > 0){
+      el.innerHTML = '<span>⚠ ' + lowCount + ' Product' + (lowCount>1?'s':'') + ' Low in Stock</span>';
+      el.className = 'scan-banner banner-warn';
+      el.style.display = 'flex';
+    } else {
+      el.style.display = 'none';
+    }
+  }
+  function updateLowStockBanner(){ if (state.currentView === 'scan') renderScanBanner(); }
+
+  function requestScan(type, label, resolve){
+    state.previousView = state.currentView;
+    state.pendingAction = { type, label, resolve };
+    showView('scan');
+  }
+
+  /* ============ QTY STEPPER ============ */
+  $('qtyMinus').addEventListener('click', () => { const v = Math.max(1, (parseInt($('qtyInput').value,10)||1) - 1); $('qtyInput').value = v; });
+  $('qtyPlus').addEventListener('click', () => { const v = Math.min(999, (parseInt($('qtyInput').value,10)||1) + 1); $('qtyInput').value = v; });
+  $('qtyInput').addEventListener('change', () => {
+    let v = parseInt($('qtyInput').value,10);
+    if (isNaN(v) || v < 1) v = 1;
+    if (v > 999) v = 999;
+    $('qtyInput').value = v;
+  });
+  function getScanQty(){ return Math.max(1, parseInt($('qtyInput').value,10) || 1); }
+  function resetScanQty(){ $('qtyInput').value = 1; }
+
+  /* ============ MODE TOGGLE ============ */
+  $('modeToggle').addEventListener('click', e => {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    state.scanMode = btn.dataset.mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+    $('viewfinderWrap').className = 'viewfinder-wrap mode-' + state.scanMode;
+  });
+
+  /* ============ MANUAL ENTRY ============ */
+  $('manualToggleBtn').addEventListener('click', () => $('manualEntry').classList.toggle('open'));
+  $('manualGoBtn').addEventListener('click', submitManual);
+  $('manualInput').addEventListener('keydown', e => { if (e.key === 'Enter') submitManual(); });
+  function submitManual(){
+    const val = $('manualInput').value.trim();
+    if (!val) return;
+    $('manualInput').value = '';
+    onBarcodeDetected(val);
+  }
+  $('enableCameraBtn').addEventListener('click', initCamera);
+  $('skipCameraBtn').addEventListener('click', () => { $('cameraGate').style.display = 'none'; $('manualEntry').classList.add('open'); });
+
+  /* ============ ROLE SWITCH ============ */
+  $('roleOwnerBtn').addEventListener('click', () => {
+    if (state.role === 'owner') return;
+    if (!state.settings.hasPassword){ setRole('owner'); return; }
+    // Elevating to Owner always re-verifies - never skipped, even if a password was cached earlier this session
+    pendingOwnerCallback = () => setRole('owner');
+    $('opInput').value = ''; $('opErr').classList.remove('show');
+    $('modalOwnerPass').classList.add('open');
+    setTimeout(()=> $('opInput').focus(), 50);
+  });
+  $('roleStaffBtn').addEventListener('click', () => setRole('staff'));
+  $('opCancel').addEventListener('click', () => { $('modalOwnerPass').classList.remove('open'); pendingOwnerCallback = null; });
+  $('opSubmit').addEventListener('click', unlockOwner);
+  $('opInput').addEventListener('keydown', e => { if (e.key === 'Enter') unlockOwner(); });
+  async function unlockOwner(){
+    if (!navigator.onLine){ showErr('opErr', 'No internet connection — connect and try again.'); return; }
+    $('opSubmit').disabled = true; $('opSubmit').textContent = 'Checking…';
+    try{
+      const res = await apiPost('checkPassword', { password: $('opInput').value });
+      if (res.ok && res.match){
+        state.ownerPasswordCache = $('opInput').value;
+        $('modalOwnerPass').classList.remove('open');
+        const cb = pendingOwnerCallback; pendingOwnerCallback = null;
+        if (cb) cb();
+      } else {
+        showErr('opErr', 'Incorrect password.');
+      }
+    } catch(e){
+      showErr('opErr', 'Could not reach the server. Check your connection.');
+    } finally {
+      $('opSubmit').disabled = false; $('opSubmit').textContent = 'Unlock';
+    }
+  }
+  function setRole(role){
+    state.role = role;
+    if (role !== 'owner') state.ownerPasswordCache = null; // dropping to Staff always forgets it - re-elevating needs the password again
+    try{ localStorage.setItem(LS_ROLE, role); }catch(e){}
+    $('roleOwnerBtn').classList.toggle('active', role==='owner');
+    $('roleStaffBtn').classList.toggle('active', role==='staff');
+    document.querySelectorAll('[data-owner-only]').forEach(el => el.hidden = (role !== 'owner'));
+    if (role !== 'owner' && state.currentView === 'reports') showView('scan');
+    if (state.currentView === 'products') renderProducts();
+  }
+
+  /* ============ VIEW / NAV ROUTING ============ */
+  document.querySelectorAll('.navbtn').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
+  function showView(name){
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    $('view-' + name).classList.add('active');
+    document.querySelectorAll('.navbtn').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+    state.currentView = name;
+    if (name === 'scan'){ renderScanBanner(); if (cameraOk) startDetectionLoop(); }
+    else { stopDetectionLoop(); }
+    if (name === 'stock') renderStock();
+    if (name === 'products') renderProducts();
+    if (name === 'reports') renderReports();
+  }
+
+  function refreshProductDatalist(){
+    $('productNamesList').innerHTML = state.products.map(p => '<option value="'+escapeHtml(p.name)+'">').join('');
+  }
+
+  /* ============ STOCK VIEW ============ */
+  function renderTodayTotal(){
+    const today = todayStr();
+    const lineQty = l => Math.abs(l.qtyChange || 1);
+    const sales = state.logs.filter(l => l.action==='Sale' && dateStrFromIso(l.ts) === today);
+    const returns = state.logs.filter(l => l.action==='Return' && dateStrFromIso(l.ts) === today);
+    const unitsSold = sales.reduce((s,l)=> s + lineQty(l), 0);
+    const revenue = sales.reduce((s,l)=> s + (l.unitPrice||0)*lineQty(l), 0) - returns.reduce((s,l)=> s + (l.unitPrice||0)*lineQty(l), 0);
+    $('todayTotalText').textContent = unitsSold + ' units · ' + money(revenue) + ' collected today';
+  }
+  function renderStock(){
+    renderTodayTotal();
+    const wrap = $('stockList');
+    if (state.products.length === 0){ wrap.innerHTML = '<div class="empty-state">No products yet. Add one from the Products tab.</div>'; return; }
+    wrap.innerHTML = state.products.map(p => {
+      const low = p.stock <= p.lowStockThreshold;
+      return '<div class="row-card">'
+        + '<div class="row-top"><div><div class="row-name">'+escapeHtml(p.name)+'</div><div class="row-barcode">'+p.barcode+'</div></div>'
+        + '<div class="row-stock '+(low?'low':'')+'">'+p.stock+'</div></div>'
+        + '<div class="row-sub"><span>Cost '+money(p.costPrice)+'</span><span>Sell '+money(p.sellPrice)+'</span>'
+        + '<span class="tag '+(low?'low':'')+'">'+(low?'LOW · thr '+p.lowStockThreshold:'thr '+p.lowStockThreshold)+'</span></div>'
+        + '</div>';
+    }).join('');
+  }
+  function flashStock(msg){
+    const el = $('stockFlash');
+    el.textContent = msg; el.classList.add('show');
+    setTimeout(()=> el.classList.remove('show'), 2200);
+  }
+
+  /* ---- Add Stock modal (works offline — queued) ---- */
+  let asSelected = null;
+  $('openAddStockBtn').addEventListener('click', () => openAddStockModal(null));
+  function openAddStockModal(product){
+    refreshProductDatalist();
+    $('asFilter').value = '';
+    if (product){
+      selectAsProduct(product);
+    } else {
+      asSelected = null;
+      $('asFormStage').style.display = 'none';
+      $('asListStage').style.display = 'block';
+      renderAsProductList('');
+    }
+    $('modalAddStock').classList.add('open');
+  }
+  function renderAsProductList(filter){
+    const f = (filter||'').trim().toLowerCase();
+    const list = state.products.filter(p => !f || p.name.toLowerCase().includes(f));
+    const wrap = $('asProductList');
+    if (state.products.length === 0){ wrap.innerHTML = '<div class="empty-state" style="margin:16px;">No products yet — add one from the Products tab first.</div>'; return; }
+    if (list.length === 0){ wrap.innerHTML = '<div class="empty-state" style="margin:16px;">No matching products.</div>'; return; }
+    wrap.innerHTML = list.map(p => {
+      const low = p.stock <= p.lowStockThreshold;
+      return '<button type="button" class="as-product-row" data-barcode="'+p.barcode+'" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; background:var(--white); border:none; border-bottom:1px solid var(--paper-line); padding:12px 14px;">'
+        + '<span><span style="font-weight:600; font-size:14px; display:block;">'+escapeHtml(p.name)+'</span><span style="font-family:var(--mono); font-size:11px; color:var(--steel);">'+p.barcode+'</span></span>'
+        + '<span style="font-family:var(--mono); font-weight:700; '+(low?'color:var(--danger);':'')+'">'+p.stock+'</span>'
+        + '</button>';
+    }).join('');
+    wrap.querySelectorAll('.as-product-row').forEach(b => b.addEventListener('click', () => selectAsProduct(findProduct(b.dataset.barcode))));
+  }
+  $('asFilter').addEventListener('input', () => renderAsProductList($('asFilter').value));
+  function selectAsProduct(product){
+    asSelected = product;
+    $('asListStage').style.display = 'none';
+    $('asFormStage').style.display = 'block';
+    $('asQty').value = 1;
+    $('asSamePrice').checked = true;
+    $('asCost').value = product.costPrice;
+    $('asSell').value = product.sellPrice;
+    $('asCost').disabled = true;
+    $('asSell').disabled = true;
+    $('asNote').value = '';
+    $('asErr').classList.remove('show');
+    updateAsChip();
+  }
+  $('asChangeProductBtn').addEventListener('click', () => {
+    asSelected = null;
+    $('asFormStage').style.display = 'none';
+    $('asListStage').style.display = 'block';
+    $('asFilter').value = '';
+    renderAsProductList('');
+  });
+  $('asSamePrice').addEventListener('change', () => {
+    const same = $('asSamePrice').checked;
+    $('asCost').disabled = same;
+    $('asSell').disabled = same;
+    if (same && asSelected){ $('asCost').value = asSelected.costPrice; $('asSell').value = asSelected.sellPrice; }
+  });
+  function updateAsChip(){
+    $('asChip').innerHTML = asSelected
+      ? '<div class="pc-name">'+escapeHtml(asSelected.name)+'</div><div class="pc-meta">'+asSelected.barcode+' · current stock '+asSelected.stock+'</div>'
+      : 'No product selected';
+  }
+  $('asScanBtn').addEventListener('click', () => {
+    $('modalAddStock').classList.remove('open');
+    requestScan('findProduct', 'Scan the product to add stock', (product) => { showView('stock'); openAddStockModal(product); });
+  });
+  $('asCancel').addEventListener('click', () => $('modalAddStock').classList.remove('open'));
+  $('asSubmit').addEventListener('click', () => {
+    const qty = parseInt($('asQty').value, 10);
+    const cost = parseFloat($('asCost').value);
+    const sell = parseFloat($('asSell').value);
+    const note = $('asNote').value.trim();
+    if (!asSelected){ showErr('asErr','Select a product first.'); return; }
+    if (!qty || qty <= 0){ showErr('asErr','Enter a quantity greater than 0.'); return; }
+    if (isNaN(cost) || isNaN(sell) || cost < 0 || sell < 0){ showErr('asErr','Enter valid cost and selling prices.'); return; }
+    const prev = asSelected.stock;
+    asSelected.stock = prev + qty;
+    asSelected.costPrice = cost;
+    asSelected.sellPrice = sell;
+    saveLocalState();
+    queueAction('addStock', { barcode:asSelected.barcode, qty, costPrice:cost, sellPrice:sell, note, user:roleName() });
+    trySyncQueue();
+    $('modalAddStock').classList.remove('open');
+    renderStock(); updateLowStockBanner();
+    flashStock('Added ' + qty + ' to ' + asSelected.name + (navigator.onLine ? '' : ' (queued — will sync)'));
+  });
+
+  /* ---- Adjust Stock modal (works offline — queued) ---- */
+  let adjSelected = null, adjDir = 'add';
+  $('openAdjustBtn').addEventListener('click', () => openAdjustModal(null));
+  function openAdjustModal(product){
+    refreshProductDatalist();
+    adjSelected = product || null;
+    $('adjSearch').value = product ? product.name : '';
+    $('adjQty').value = 1;
+    adjDir = 'add';
+    document.querySelectorAll('.dir-btn').forEach(b => b.classList.toggle('active', b.dataset.dir==='add'));
+    $('adjReason').value = 'Damaged';
+    $('adjNote').value = '';
+    $('adjErr').classList.remove('show');
+    updateAdjChip();
+    $('modalAdjust').classList.add('open');
+  }
+  function updateAdjChip(){
+    $('adjChip').innerHTML = adjSelected
+      ? '<div class="pc-name">'+escapeHtml(adjSelected.name)+'</div><div class="pc-meta">'+adjSelected.barcode+' · current stock '+adjSelected.stock+'</div>'
+      : 'No product selected';
+  }
+  $('adjSearch').addEventListener('input', () => {
+    const match = state.products.find(p => p.name.toLowerCase() === $('adjSearch').value.trim().toLowerCase());
+    if (match){ adjSelected = match; updateAdjChip(); }
+  });
+  $('adjScanBtn').addEventListener('click', () => {
+    $('modalAdjust').classList.remove('open');
+    requestScan('findProduct', 'Scan the product to adjust', (product) => { showView('stock'); openAdjustModal(product); });
+  });
+  $('adjDirToggle').addEventListener('click', e => {
+    const b = e.target.closest('.dir-btn'); if (!b) return;
+    adjDir = b.dataset.dir;
+    document.querySelectorAll('.dir-btn').forEach(x => x.classList.toggle('active', x===b));
+  });
+  $('adjCancel').addEventListener('click', () => $('modalAdjust').classList.remove('open'));
+  $('adjSubmit').addEventListener('click', () => {
+    const qty = parseInt($('adjQty').value, 10);
+    if (!adjSelected){ showErr('adjErr','Select a product first (search or scan).'); return; }
+    if (!qty || qty <= 0){ showErr('adjErr','Enter a quantity greater than 0.'); return; }
+    const prev = adjSelected.stock;
+    const delta = adjDir === 'add' ? qty : -qty;
+    if (adjDir === 'remove' && qty > prev){ showErr('adjErr','Cannot remove more than current stock ('+prev+').'); return; }
+    adjSelected.stock = prev + delta;
+    saveLocalState();
+    queueAction('adjustStock', { barcode:adjSelected.barcode, delta, reason:$('adjReason').value, note:$('adjNote').value.trim(), user:roleName() });
+    trySyncQueue();
+    $('modalAdjust').classList.remove('open');
+    renderStock(); updateLowStockBanner();
+    flashStock('Adjusted ' + adjSelected.name + ' (' + $('adjReason').value + ')' + (navigator.onLine ? '' : ' (queued — will sync)'));
+  });
+
+  function showErr(id, msg){ const el = $(id); el.textContent = msg; el.classList.add('show'); }
+
+  /* ============ PRODUCTS VIEW ============ */
+  function renderProducts(){
+    refreshProductDatalist();
+    const hint = $('productsHint');
+    if (state.role === 'staff'){
+      hint.textContent = 'Staff can add new products. Editing or deleting existing ones needs the Owner account.';
+      hint.style.display = 'block';
+    } else { hint.style.display = 'none'; }
+
+    const wrap = $('productsList');
+    if (state.products.length === 0){ wrap.innerHTML = '<div class="empty-state">No products yet. Tap “+ Add Product” to create your first one.</div>'; return; }
+    const isOwner = state.role === 'owner';
+    wrap.innerHTML = state.products.map(p => {
+      const low = p.stock <= p.lowStockThreshold;
+      return '<div class="row-card">'
+        + '<div class="row-top"><div><div class="row-name">'+escapeHtml(p.name)+'</div><div class="row-barcode">'+p.barcode+'</div></div>'
+        + '<div class="row-stock '+(low?'low':'')+'">'+p.stock+'</div></div>'
+        + '<div class="row-sub"><span>Cost '+money(p.costPrice)+'</span><span>Sell '+money(p.sellPrice)+'</span><span>thr '+p.lowStockThreshold+'</span></div>'
+        + (isOwner ? '<div class="row-actions"><button class="btn-outline edit-product-btn" data-barcode="'+p.barcode+'" style="flex:1;">Edit</button></div>' : '')
+        + '</div>';
+    }).join('');
+    wrap.querySelectorAll('.edit-product-btn').forEach(b => b.addEventListener('click', () => openProductModal(findProduct(b.dataset.barcode))));
+  }
+
+  let pfEditing = null;
+  $('openAddProductBtn').addEventListener('click', () => openProductModal(null));
+  function openProductModal(product){
+    pfEditing = product || null;
+    $('pfTitle').textContent = product ? 'Edit Product' : 'Add Product';
+    $('pfBarcode').value = product ? product.barcode : '';
+    $('pfBarcode').disabled = !!product;
+    $('pfName').value = product ? product.name : '';
+    $('pfCost').value = product ? product.costPrice : '';
+    $('pfSell').value = product ? product.sellPrice : '';
+    $('pfThreshold').value = product ? product.lowStockThreshold : state.settings.defaultLowStockThreshold;
+    $('pfStockWrap').style.display = product ? 'none' : 'block';
+    $('pfStock').value = 0;
+    $('pfDelete').style.display = (product && state.role === 'owner') ? 'block' : 'none';
+    $('pfErr').classList.remove('show');
+    $('modalProduct').classList.add('open');
+  }
+  $('pfScanBtn').addEventListener('click', () => {
+    $('modalProduct').classList.remove('open');
+    requestScan('rawCode', 'Scan the new product’s barcode', (code, existing) => {
+      showView('products');
+      if (existing){ openProductModal(existing); }
+      else { openProductModal(null); $('pfBarcode').value = code; }
+    });
+  });
+  $('pfCancel').addEventListener('click', () => $('modalProduct').classList.remove('open'));
+  $('pfSubmit').addEventListener('click', () => {
+    const barcode = $('pfBarcode').value.trim();
+    const name = $('pfName').value.trim();
+    const cost = parseFloat($('pfCost').value);
+    const sell = parseFloat($('pfSell').value);
+    const threshold = parseInt($('pfThreshold').value, 10);
+    if (!barcode || !name){ showErr('pfErr','Barcode and product name are required.'); return; }
+    if (isNaN(cost) || isNaN(sell) || cost < 0 || sell < 0){ showErr('pfErr','Enter valid cost and selling prices.'); return; }
+    if (isNaN(threshold) || threshold < 0){ showErr('pfErr','Enter a valid low stock threshold.'); return; }
+
+    if (pfEditing){
+      ensureOwnerAuth(async () => {
+        $('pfSubmit').disabled = true;
+        const res = await doOwnerServerAction('editProduct', { barcode:pfEditing.barcode, name, costPrice:cost, sellPrice:sell, lowStockThreshold:threshold, user:roleName() });
+        $('pfSubmit').disabled = false;
+        if (!res.ok){ showErr('pfErr', res.error === 'offline' ? 'Editing needs an internet connection.' : 'Could not save (' + res.error + ').'); return; }
+        Object.assign(pfEditing, { name, costPrice:cost, sellPrice:sell, lowStockThreshold:threshold });
+        saveLocalState();
+        $('modalProduct').classList.remove('open');
+        renderProducts(); updateLowStockBanner();
+        refreshFromServer().then(()=>{ if (state.currentView==='products') renderProducts(); });
+      });
+      return;
+    }
+
+    if (findProduct(barcode)){ showErr('pfErr','A product with this barcode already exists.'); return; }
+    const stock = parseInt($('pfStock').value, 10) || 0;
+    const product = { barcode, name, costPrice:cost, sellPrice:sell, stock, lowStockThreshold:threshold };
+    state.products.push(product);
+    saveLocalState();
+    queueAction('addProduct', { barcode, name, costPrice:cost, sellPrice:sell, stock, lowStockThreshold:threshold, user:roleName() });
+    trySyncQueue();
+    $('modalProduct').classList.remove('open');
+    renderProducts(); updateLowStockBanner();
+  });
+  $('pfDelete').addEventListener('click', () => {
+    if (!pfEditing) return;
+    if (!confirm('Delete "'+pfEditing.name+'"? This cannot be undone.')) return;
+    ensureOwnerAuth(async () => {
+      $('pfDelete').disabled = true;
+      const res = await doOwnerServerAction('deleteProduct', { barcode: pfEditing.barcode, user: roleName() });
+      $('pfDelete').disabled = false;
+      if (!res.ok){ showErr('pfErr', res.error === 'offline' ? 'Deleting needs an internet connection.' : 'Could not delete (' + res.error + ').'); return; }
+      state.products = state.products.filter(p => p.barcode !== pfEditing.barcode);
+      saveLocalState();
+      $('modalProduct').classList.remove('open');
+      renderProducts(); updateLowStockBanner();
+      refreshFromServer().then(()=>{ if (state.currentView==='products') renderProducts(); });
+    });
+  });
+
+  /* ============ REPORTS VIEW (owner) ============ */
+  let activeReportTab = 'daily';
+  $('reportTabs').addEventListener('click', e => {
+    const b = e.target.closest('.tab-btn'); if (!b) return;
+    activeReportTab = b.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(x => x.classList.toggle('active', x===b));
+    renderReports();
+  });
+
+  function renderReports(){
+    const c = $('reportContent');
+    if (activeReportTab === 'daily') return renderDailyReport(c);
+    if (activeReportTab === 'product') return renderProductReport(c);
+    if (activeReportTab === 'stock') return renderStockReport(c);
+    if (activeReportTab === 'low') return renderLowStockReport(c);
+    if (activeReportTab === 'activity') return renderActivityReport(c);
+    if (activeReportTab === 'log') return renderRawLog(c);
+    if (activeReportTab === 'settings') return renderSettings(c);
+  }
+
+  function renderDailyReport(c){
+    const date = c.dataset.date || todayStr();
+    const dayLogs = state.logs.filter(l => (l.action==='Sale'||l.action==='Return') && dateStrFromIso(l.ts) === date);
+    const sales = dayLogs.filter(l => l.action==='Sale');
+    const returns = dayLogs.filter(l => l.action==='Return');
+    const lineQty = l => Math.abs(l.qtyChange || 1);
+    const lineRevenue = l => (l.unitPrice||0) * lineQty(l);
+    const lineMargin = l => ((l.unitPrice||0) - (l.unitCost||0)) * lineQty(l);
+    const unitsSold = sales.reduce((s,l)=> s + lineQty(l), 0);
+    const unitsReturned = returns.reduce((s,l)=> s + lineQty(l), 0);
+    const revenue = sales.reduce((s,l)=> s + lineRevenue(l), 0);
+    const returnedVal = returns.reduce((s,l)=> s + lineRevenue(l), 0);
+    const profit = sales.reduce((s,l)=> s + lineMargin(l), 0) - returns.reduce((s,l)=> s + lineMargin(l), 0);
+    c.innerHTML =
+      '<div class="date-row"><input type="date" id="dailyDate" value="'+date+'"></div>'
+      + '<div class="stat-grid">'
+      + statCard(unitsSold, 'Units Sold') + statCard(money(revenue-returnedVal), 'Net Revenue')
+      + statCard(money(profit), 'Profit') + statCard(unitsReturned, 'Units Returned')
+      + '</div>'
+      + tableWrap(['Time','Product','Type','Qty','Amount'], dayLogs.map(l => [fmtDT(l.ts).split(' ')[1], escapeHtml(l.product), l.action + (l.pending?' ⏳':''), lineQty(l), (l.action==='Sale'?'+':'-') + money(lineRevenue(l))]));
+    c.dataset.date = date;
+    $('dailyDate').addEventListener('change', e => { c.dataset.date = e.target.value; renderReports(); });
+  }
+
+  function renderProductReport(c){
+    const rows = state.products.map(p => {
+      const sold = state.logs.filter(l => l.action==='Sale' && l.barcode===p.barcode);
+      const ret = state.logs.filter(l => l.action==='Return' && l.barcode===p.barcode);
+      const lineQty = l => Math.abs(l.qtyChange || 1);
+      const lineRevenue = l => (l.unitPrice||0) * lineQty(l);
+      const lineMargin = l => ((l.unitPrice||0) - (l.unitCost||0)) * lineQty(l);
+      const units = sold.reduce((s,l)=>s+lineQty(l),0);
+      const retUnits = ret.reduce((s,l)=>s+lineQty(l),0);
+      const rev = sold.reduce((s,l)=>s+lineRevenue(l),0) - ret.reduce((s,l)=>s+lineRevenue(l),0);
+      const profit = sold.reduce((s,l)=>s+lineMargin(l),0) - ret.reduce((s,l)=>s+lineMargin(l),0);
+      return [escapeHtml(p.name), units, retUnits, units-retUnits, money(rev), money(profit)];
+    });
+    c.innerHTML = tableWrap(['Product','Sold','Returned','Net Units','Revenue','Profit'], rows);
+  }
+
+  function renderStockReport(c){
+    const rows = state.products.map(p => [escapeHtml(p.name), p.barcode, p.stock, p.lowStockThreshold, p.stock<=p.lowStockThreshold?'LOW':'OK']);
+    c.innerHTML = tableWrap(['Product','Barcode','Stock','Threshold','Status'], rows);
+  }
+
+  function renderLowStockReport(c){
+    const rows = state.products.filter(p=>p.stock<=p.lowStockThreshold).map(p => [escapeHtml(p.name), p.barcode, p.stock, p.lowStockThreshold]);
+    c.innerHTML = rows.length ? tableWrap(['Product','Barcode','Stock','Threshold'], rows) : '<div class="empty-state">Nothing low on stock right now.</div>';
+  }
+
+  function renderActivityReport(c){
+    const users = ['Owner','Staff'];
+    const stats = users.map(u => {
+      const logs = state.logs.filter(l => l.user === u);
+      const count = a => logs.filter(l=>l.action===a).length;
+      return statCard(logs.length, u + ' · total actions')
+        + statCard(count('Sale')+' sold / '+count('Return')+' ret.', u + ' · sell/return');
+    }).join('');
+    const rows = state.logs.map(l => [fmtDT(l.ts), l.user, l.action + (l.pending?' ⏳':''), escapeHtml(l.product), (l.qtyChange>0?'+':'')+l.qtyChange, l.prevStock+'→'+l.newStock, escapeHtml(l.reason||l.note||'')]);
+    c.innerHTML = '<div class="stat-grid">'+stats+'</div>' + tableWrap(['Time','User','Action','Product','Qty','Stock','Detail'], rows);
+  }
+
+  function renderRawLog(c){
+    const rows = state.logs.map(l => [
+      fmtDT(l.ts) + (l.pending?' ⏳':''), l.user, l.action, l.barcode, escapeHtml(l.product),
+      (l.qtyChange>0?'+':'')+l.qtyChange, l.prevStock, l.newStock,
+      escapeHtml(l.reason||''), escapeHtml(l.note||''),
+      l.unitPrice===null||l.unitPrice===undefined?'':money(l.unitPrice),
+      l.unitCost===null||l.unitCost===undefined?'':money(l.unitCost)
+    ]);
+    c.innerHTML = '<p style="margin:0 16px 10px; font-size:12px; color:var(--steel);">Every row your Google Sheet\'s ActivityLog tab has, in the same order. Nothing here can be edited or deleted from the app.</p>'
+      + tableWrap(['Time','User','Action','Barcode','Product','Qty','Prev','New','Reason','Note','Unit Price','Unit Cost'], rows);
+  }
+
+  function renderSettings(c){
+    const hasPass = !!state.settings.hasPassword;
+    const errs = getSyncErrors();
+    c.innerHTML =
+      '<div class="table-wrap" style="padding:14px;">'
+      + '<label style="display:block;font-size:12px;font-weight:600;color:var(--steel);margin-bottom:5px;">Low Stock Alert Quantity</label>'
+      + '<p style="font-size:12px;color:var(--steel);margin:0 0 8px;">Used as the default threshold for new products. You can still override it per product.</p>'
+      + '<input type="number" id="setThreshold" min="0" value="'+state.settings.defaultLowStockThreshold+'" style="width:100%;border:1px solid var(--paper-line);border-radius:10px;padding:11px 12px;font-family:var(--mono);">'
+      + '<div class="btn-row" style="padding:10px 0 0;">'
+      + '<button class="btn-primary" id="setThresholdSave">Save Default</button>'
+      + '<button class="btn-outline" id="setThresholdApplyAll">Apply to All Products</button>'
+      + '</div>'
+      + '<div class="err-line show" id="setThresholdMsg" style="color:var(--sell-dim);display:none;"></div>'
+      + '</div>'
+      + '<div class="table-wrap" style="padding:14px;">'
+      + '<label style="display:block;font-size:12px;font-weight:600;color:var(--steel);margin-bottom:5px;">Owner Password</label>'
+      + '<p style="font-size:12px;color:var(--steel);margin:0 0 8px;">'+(hasPass ? 'A password is currently set — switching to Owner requires it.' : 'No password set — anyone can switch to Owner right now.')+'</p>'
+      + '<input type="password" id="setPassword" placeholder="Leave blank to remove protection" style="width:100%;border:1px solid var(--paper-line);border-radius:10px;padding:11px 12px;font-family:var(--mono);">'
+      + '<div class="btn-row" style="padding:10px 0 0;"><button class="btn-primary" id="setPasswordSave">Save Password</button></div>'
+      + '<div class="err-line show" id="setPasswordMsg" style="color:var(--sell-dim);display:none;"></div>'
+      + '</div>'
+      + (errs.length ? ('<div class="table-wrap" style="padding:14px;">'
+          + '<label style="display:block;font-size:12px;font-weight:600;color:var(--danger);margin-bottom:5px;">Sync Issues (' + errs.length + ')</label>'
+          + '<p style="font-size:12px;color:var(--steel);margin:0 0 8px;">These actions could not be applied to your Sheet and were not retried automatically.</p>'
+          + errs.map(er => '<div style="font-size:12px;font-family:var(--mono);padding:6px 0;border-top:1px solid var(--paper-line);">'+fmtDT(er.ts)+' · '+er.action+' · '+escapeHtml(er.product||'')+' · '+escapeHtml(er.error)+'</div>').join('')
+          + '<div class="btn-row" style="padding:10px 0 0;"><button class="btn-outline" id="clearSyncErrorsBtn">Clear List</button></div>'
+        + '</div>') : '')
+      + '<a class="reset-link" id="clearLocalLink" href="#">Clear local cache &amp; re-sync from Sheet</a>';
+
+    $('setThresholdSave').addEventListener('click', () => {
+      const v = parseInt($('setThreshold').value, 10);
+      if (isNaN(v) || v < 0) return;
+      ensureOwnerAuth(async () => {
+        const res = await doOwnerServerAction('saveSettings', { defaultLowStockThreshold: v });
+        if (!res.ok){ flashMsg('setThresholdMsg', res.error === 'offline' ? 'Needs an internet connection.' : 'Could not save.'); return; }
+        state.settings.defaultLowStockThreshold = v;
+        saveLocalState();
+        flashMsg('setThresholdMsg', 'Default saved.');
+      });
+    });
+    $('setThresholdApplyAll').addEventListener('click', () => {
+      const v = parseInt($('setThreshold').value, 10);
+      if (isNaN(v) || v < 0) return;
+      ensureOwnerAuth(async () => {
+        const res = await doOwnerServerAction('saveSettings', { defaultLowStockThreshold: v, applyThresholdToAll: true });
+        if (!res.ok){ flashMsg('setThresholdMsg', res.error === 'offline' ? 'Needs an internet connection.' : 'Could not save.'); return; }
+        state.settings.defaultLowStockThreshold = v;
+        state.products.forEach(p => p.lowStockThreshold = v);
+        saveLocalState();
+        updateLowStockBanner();
+        flashMsg('setThresholdMsg', 'Applied to all ' + state.products.length + ' products.');
+      });
+    });
+    $('setPasswordSave').addEventListener('click', () => {
+      const newPass = $('setPassword').value.trim();
+      ensureOwnerAuth(async () => {
+        const res = await doOwnerServerAction('saveSettings', { newOwnerPassword: newPass });
+        if (!res.ok){ flashMsg('setPasswordMsg', res.error === 'offline' ? 'Needs an internet connection.' : 'Could not save.'); return; }
+        state.settings.hasPassword = !!newPass;
+        state.ownerPasswordCache = newPass || null;
+        saveLocalState();
+        $('setPassword').value = '';
+        flashMsg('setPasswordMsg', newPass ? 'Password set.' : 'Password protection removed.');
+        renderSettings(c);
+      });
+    });
+    const clearErrBtn = $('clearSyncErrorsBtn');
+    if (clearErrBtn) clearErrBtn.addEventListener('click', () => { clearSyncErrors(); updateSyncBadge(); renderSettings(c); });
+    $('clearLocalLink').addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (!confirm('Reload product and log data fresh from your Google Sheet? Any un-synced offline changes still queued will be kept and retried.')) return;
+      const ok = await refreshFromServer();
+      flashMsg('setThresholdMsg', ok ? 'Re-synced from Sheet.' : 'Could not reach the server.');
+      renderStock(); renderProducts(); updateLowStockBanner();
+    });
+  }
+  function flashMsg(id, text){
+    const el = $(id);
+    el.textContent = text; el.style.display = 'block';
+    setTimeout(()=>{ el.style.display = 'none'; }, 2200);
+  }
+
+  function statCard(num, lbl){ return '<div class="stat-card"><div class="num">'+num+'</div><div class="lbl">'+lbl+'</div></div>'; }
+  function tableWrap(headers, rows){
+    if (rows.length === 0) return '<div class="empty-state">No activity yet.</div>';
+    return '<div class="table-wrap"><table><thead><tr>'+headers.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'
+      + rows.map(r => '<tr>'+r.map(v=>'<td>'+v+'</td>').join('')+'</tr>').join('')
+      + '</tbody></table></div>';
+  }
+
+  /* ============ SERVICE WORKER (offline app shell) ============ */
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
+  }
+
+  /* ============ ACCESS PIN GATE ============ */
+  function checkPinGate(){
+    try{ if (localStorage.getItem(LS_UNLOCKED) === '1'){ $('pinGate').style.display = 'none'; return; } }catch(e){}
+    $('pinGate').style.display = 'flex';
+    setTimeout(()=> $('pinInput').focus(), 50);
+  }
+  $('pinSubmit').addEventListener('click', tryPin);
+  $('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') tryPin(); });
+  function tryPin(){
+    if ($('pinInput').value === APP_PIN){
+      try{ localStorage.setItem(LS_UNLOCKED, '1'); }catch(e){}
+      $('pinGate').style.display = 'none';
+    } else {
+      $('pinErr').textContent = 'Incorrect code.'; $('pinErr').classList.add('show');
+      $('pinInput').value = '';
+    }
+  }
+  checkPinGate();
+
+  /* ============ INIT ============ */
+  (async function init(){
+    setRole(state.role);
+    const hadLocal = loadLocalState();
+    if (!hadLocal) await refreshFromServer();
+    renderScanBanner();
+    renderStock();
+    renderProducts();
+    updateSyncBadge();
+    trySyncQueue();
+  })();
+
+})();
+</script>
+</body>
+</html>
